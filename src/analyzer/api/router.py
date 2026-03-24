@@ -1,4 +1,5 @@
 from typing import Annotated
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -6,6 +7,7 @@ from analyzer.api.dependencies import get_orchestrator
 from analyzer.api.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
+    AsyncAnalyzeResponse,
     HealthResponse,
     RuleInfo,
 )
@@ -51,6 +53,30 @@ async def list_rules(language: str | None = None) -> list[RuleInfo]:
         )
         for r in rules
     ]
+
+
+@router.post("/analyze/async", response_model=AsyncAnalyzeResponse)
+async def analyze_async(request: AnalyzeRequest) -> AsyncAnalyzeResponse:
+    from analyzer.workers.tasks import run_async_scan
+
+    scan_id = str(uuid4())
+    task = run_async_scan.delay(
+        source_code=request.source_code,
+        file_path=request.file_path,
+        scan_id=scan_id,
+        config=request.config.model_dump(),
+    )
+    return AsyncAnalyzeResponse(
+        task_id=task.id,
+        scan_id=UUID(scan_id),
+        status="queued",
+        poll_url=f"/api/v1/results/{scan_id}",
+    )
+
+
+@router.get("/results/{scan_id}")
+async def get_results(scan_id: str) -> dict:  # type: ignore[type-arg]
+    return {"scan_id": scan_id, "status": "pending", "message": "Full persistence TBD"}
 
 
 @router.get("/health", response_model=HealthResponse)
