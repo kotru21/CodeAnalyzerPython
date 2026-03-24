@@ -6,13 +6,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 from analyzer.models.base import Base
 
 
-class FindingModel(Base):
+class FindingModel(Base, kw_only=True):
     __tablename__ = "findings"
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default_factory=lambda: str(uuid.uuid4())
     )
-    scan_id: Mapped[str] = mapped_column(String(36), ForeignKey("scans.id"))
+    scan_id: Mapped[str] = mapped_column(String(36), ForeignKey("scans.id"), default="")
     rule_id: Mapped[str] = mapped_column(String(30), default="")
     severity: Mapped[str] = mapped_column(String(10), default="")
     confidence: Mapped[str] = mapped_column(String(10), default="")

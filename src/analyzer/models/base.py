@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import DeclarativeBase, MappedAsDataclass, Session, sessionmaker
 
 from analyzer.config import get_settings
@@ -10,7 +10,7 @@ class Base(DeclarativeBase, MappedAsDataclass):
     pass
 
 
-def get_engine():
+def get_engine() -> Engine:
     settings = get_settings()
     return create_engine(settings.database_url, pool_pre_ping=True)
 

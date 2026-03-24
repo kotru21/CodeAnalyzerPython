@@ -21,7 +21,7 @@ def _discover_rules() -> None:
         importlib.import_module(modname)
 
     for subclass in BaseRule.__subclasses__():
-        _registry.append(subclass())
+        _registry.append(subclass())  # type: ignore[abstract]
 
     _loaded = True
 

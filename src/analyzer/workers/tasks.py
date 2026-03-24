@@ -1,3 +1,4 @@
+# mypy: disable-error-code="import-untyped,no-untyped-def,untyped-decorator"
 from celery import Celery
 
 from analyzer.config import get_settings

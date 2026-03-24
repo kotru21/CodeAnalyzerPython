@@ -53,3 +53,7 @@ python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
 mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["celery.*", "tree_sitter.*", "tree_sitter_javascript.*", "tree_sitter_typescript.*"]
+ignore_missing_imports = true
