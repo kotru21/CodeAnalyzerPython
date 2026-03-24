@@ -60,3 +60,72 @@ class TestSQLInjectionRule:
             assert len(findings) > 0, f"Expected detection for {case['id']}"
         else:
             assert len(findings) == 0, f"False positive for {case['id']}"
+
+
+XSS_CASES = [
+    {
+        "id": "xss-innerhtml-assignment",
+        "code": """
+app.get('/page', (req, res) => {
+    const el = document.getElementById('output');
+    el.innerHTML = req.query.input;
+});
+""",
+        "should_detect": True,
+        "rule_id": "JS-XSS-001",
+    },
+    {
+        "id": "xss-document-write",
+        "code": """
+app.get('/page', (req, res) => {
+    document.write(req.query.input);
+});
+""",
+        "should_detect": True,
+        "rule_id": "JS-XSS-001",
+    },
+    {
+        "id": "xss-safe-textcontent",
+        "code": """
+app.get('/page', (req, res) => {
+    const el = document.getElementById('output');
+    el.textContent = req.query.input;
+});
+""",
+        "should_detect": False,
+        "rule_id": "JS-XSS-001",
+    },
+    {
+        "id": "xss-dangerously-set-innerhtml",
+        "code": """
+function UserProfile({ data }) {
+    return <div dangerouslySetInnerHTML={{__html: data.bio}} />;
+}
+""",
+        "should_detect": True,
+        "rule_id": "JS-XSS-002",
+    },
+    {
+        "id": "xss-safe-jsx-expression",
+        "code": """
+function UserProfile({ data }) {
+    return <div>{data.bio}</div>;
+}
+""",
+        "should_detect": False,
+        "rule_id": "JS-XSS-002",
+    },
+]
+
+
+class TestXSSRule:
+    @pytest.mark.parametrize("case", XSS_CASES, ids=[c["id"] for c in XSS_CASES])
+    def test_xss(self, case: dict):
+        ctx = make_js_context(case["code"])
+        rules = get_all_rules()
+        rule = next(r for r in rules if r.meta().rule_id == case["rule_id"])
+        findings = rule.run(ctx)
+        if case["should_detect"]:
+            assert len(findings) > 0, f"Expected detection for {case['id']}"
+        else:
+            assert len(findings) == 0, f"False positive for {case['id']}"
