@@ -129,3 +129,51 @@ class TestXSSRule:
             assert len(findings) > 0, f"Expected detection for {case['id']}"
         else:
             assert len(findings) == 0, f"False positive for {case['id']}"
+
+
+CMDI_CASES = [
+    {
+        "id": "cmdi-exec-template-literal",
+        "code": """
+const { exec } = require('child_process');
+app.get('/run', (req, res) => {
+    exec(`ls ${req.query.dir}`);
+});
+""",
+        "should_detect": True,
+        "rule_id": "JS-CMD-001",
+    },
+    {
+        "id": "cmdi-eval-variable",
+        "code": """
+app.post('/calc', (req, res) => {
+    const expr = req.body.expression;
+    eval(expr);
+});
+""",
+        "should_detect": True,
+        "rule_id": "JS-CMD-001",
+    },
+    {
+        "id": "cmdi-safe-static-exec",
+        "code": """
+const { execSync } = require('child_process');
+const output = execSync('ls -la');
+""",
+        "should_detect": False,
+        "rule_id": "JS-CMD-001",
+    },
+]
+
+
+class TestCommandInjectionRule:
+    @pytest.mark.parametrize("case", CMDI_CASES, ids=[c["id"] for c in CMDI_CASES])
+    def test_command_injection(self, case: dict):
+        ctx = make_js_context(case["code"])
+        rules = get_all_rules()
+        rule = next(r for r in rules if r.meta().rule_id == case["rule_id"])
+        findings = rule.run(ctx)
+        if case["should_detect"]:
+            assert len(findings) > 0, f"Expected detection for {case['id']}"
+        else:
+            assert len(findings) == 0, f"False positive for {case['id']}"
