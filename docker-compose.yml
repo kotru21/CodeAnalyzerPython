@@ -1,0 +1,62 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: analyzer
+      POSTGRES_PASSWORD: analyzer
+      POSTGRES_DB: analyzer
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U analyzer"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  analyzer:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      ANALYZER_DATABASE_URL: postgresql://analyzer:analyzer@db:5432/analyzer
+      ANALYZER_REDIS_URL: redis://redis:6379/0
+      ANALYZER_CELERY_BROKER_URL: redis://redis:6379/1
+      ANALYZER_CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data:ro
+
+  worker:
+    build: .
+    command: celery -A analyzer.workers.tasks worker --loglevel=info
+    environment:
+      ANALYZER_DATABASE_URL: postgresql://analyzer:analyzer@db:5432/analyzer
+      ANALYZER_REDIS_URL: redis://redis:6379/0
+      ANALYZER_CELERY_BROKER_URL: redis://redis:6379/1
+      ANALYZER_CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data:ro
+
+volumes:
+  pgdata:
