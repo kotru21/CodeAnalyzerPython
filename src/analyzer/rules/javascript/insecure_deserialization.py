@@ -37,9 +37,7 @@ class InsecureDeserializationRule(BaseRule):
         for child in node.children:
             self._walk(child, ctx, findings)
 
-    def _check_call(
-        self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]
-    ) -> None:
+    def _check_call(self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]) -> None:
         func = node.child_by_field_name("function")
         if func is None:
             return
@@ -57,9 +55,8 @@ class InsecureDeserializationRule(BaseRule):
                 findings.append(self._make_finding(node, ctx))
                 return
             first_arg = next((c for c in args.children if c.is_named), None)
-            if first_arg and first_arg.type == "identifier":
-                if "Buffer.from" in ctx.source_code:
-                    findings.append(self._make_finding(node, ctx))
+            if first_arg and first_arg.type == "identifier" and "Buffer.from" in ctx.source_code:
+                findings.append(self._make_finding(node, ctx))
 
     @staticmethod
     def _has_buffer_from(args_node: Node) -> bool:

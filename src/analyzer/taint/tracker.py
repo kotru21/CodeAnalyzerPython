@@ -1,13 +1,13 @@
 from dataclasses import dataclass, field
+
 from tree_sitter import Node
 
 from analyzer.rules.base import AnalysisContext
 from analyzer.taint.sanitizers import SANITIZER_NAMES
 from analyzer.taint.sources_sinks import (
-    SOURCE_PATTERNS,
     SINK_IDENTIFIERS,
     SINK_MEMBER_PATTERNS,
-    SINK_METHODS,
+    SOURCE_PATTERNS,
 )
 
 
@@ -28,9 +28,7 @@ class TaintTracker:
         sanitized_vars: set[str] = set()
         flows: list[TaintFlow] = []
 
-        self._collect_taint_info(
-            context.root_node, tainted_vars, sanitized_vars, flows, context
-        )
+        self._collect_taint_info(context.root_node, tainted_vars, sanitized_vars, flows, context)
         return flows
 
     def _collect_taint_info(
@@ -51,9 +49,7 @@ class TaintTracker:
         for child in node.children:
             self._collect_taint_info(child, tainted, sanitized, flows, ctx)
 
-    def _handle_var_decl(
-        self, node: Node, tainted: dict[str, str], sanitized: set[str]
-    ) -> None:
+    def _handle_var_decl(self, node: Node, tainted: dict[str, str], sanitized: set[str]) -> None:
         name_node = node.child_by_field_name("name")
         value_node = node.child_by_field_name("value")
         if name_node is None or value_node is None:
@@ -70,9 +66,7 @@ class TaintTracker:
         if source:
             tainted[var_name] = source
 
-    def _handle_assignment(
-        self, node: Node, tainted: dict[str, str], sanitized: set[str]
-    ) -> None:
+    def _handle_assignment(self, node: Node, tainted: dict[str, str], sanitized: set[str]) -> None:
         left = node.child_by_field_name("left")
         right = node.child_by_field_name("right")
         if left is None or right is None:

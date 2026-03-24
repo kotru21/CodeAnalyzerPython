@@ -1,7 +1,7 @@
 from tree_sitter import Node
 
-from analyzer.rules.base import AnalysisContext, BaseRule, RawFinding, RuleMeta
 from analyzer.core.severity import Confidence, Severity
+from analyzer.rules.base import AnalysisContext, BaseRule, RawFinding, RuleMeta
 
 _DANGEROUS_PROPS = frozenset({"innerHTML", "outerHTML"})
 _WRITE_METHODS = frozenset({"write", "writeln"})
@@ -113,9 +113,7 @@ class DangerouslySetInnerHTMLRule(BaseRule):
         for child in node.children:
             self._walk(child, ctx, findings)
 
-    def _check_jsx_attr(
-        self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]
-    ) -> None:
+    def _check_jsx_attr(self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]) -> None:
         for child in node.children:
             if child.type == "property_identifier":
                 name = child.text.decode() if child.text else ""

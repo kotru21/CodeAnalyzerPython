@@ -1,8 +1,7 @@
 import pytest
 
-from tests.conftest import make_js_context
 from analyzer.rules.registry import get_all_rules, reset_registry
-
+from tests.conftest import make_js_context
 
 SQLI_CASES = [
     {

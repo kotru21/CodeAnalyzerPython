@@ -1,7 +1,7 @@
 import logging
 import time
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from analyzer.api.schemas import (
@@ -73,12 +73,10 @@ class Orchestrator:
             language=language,
             stats=stats,
             findings=findings,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
-    def _run_rules(
-        self, rules: Sequence[BaseRule], context: AnalysisContext
-    ) -> list[RawFinding]:
+    def _run_rules(self, rules: Sequence[BaseRule], context: AnalysisContext) -> list[RawFinding]:
         results: list[RawFinding] = []
         for rule in rules:
             if rule.should_skip(context):
@@ -203,9 +201,7 @@ class Orchestrator:
         return ""
 
     @staticmethod
-    def _compute_stats(
-        findings: list[Finding], ctx: AnalysisContext, elapsed_ms: int
-    ) -> ScanStats:
+    def _compute_stats(findings: list[Finding], ctx: AnalysisContext, elapsed_ms: int) -> ScanStats:
         counts: dict[Severity, int] = {s: 0 for s in Severity}
         for f in findings:
             counts[f.severity] = counts.get(f.severity, 0) + 1

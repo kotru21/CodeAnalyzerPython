@@ -1,11 +1,18 @@
 from tree_sitter import Node
 
-from analyzer.rules.base import AnalysisContext, BaseRule, RawFinding, RuleMeta
 from analyzer.core.severity import Confidence, Severity
+from analyzer.rules.base import AnalysisContext, BaseRule, RawFinding, RuleMeta
 
-_EXEC_FUNCTIONS = frozenset({
-    "exec", "execSync", "spawn", "spawnSync", "execFile", "execFileSync",
-})
+_EXEC_FUNCTIONS = frozenset(
+    {
+        "exec",
+        "execSync",
+        "spawn",
+        "spawnSync",
+        "execFile",
+        "execFileSync",
+    }
+)
 
 
 class CommandInjectionRule(BaseRule):
@@ -69,9 +76,11 @@ class CommandInjectionRule(BaseRule):
         if not real_args:
             return
         first_arg = real_args[0]
-        if first_arg.type == "template_string" and self._has_substitution(first_arg):
-            findings.append(self._make_finding(node, ctx))
-        elif first_arg.type in ("identifier", "member_expression", "binary_expression"):
+        is_tainted_template = first_arg.type == "template_string" and self._has_substitution(
+            first_arg
+        )
+        is_dynamic = first_arg.type in ("identifier", "member_expression", "binary_expression")
+        if is_tainted_template or is_dynamic:
             findings.append(self._make_finding(node, ctx))
 
     @staticmethod

@@ -22,20 +22,22 @@ SANITIZERS: list[Sanitizer] = [
     Sanitizer("path.basename", "path", "Extract basename"),
 ]
 
-SANITIZER_NAMES: frozenset[str] = frozenset(
-    s.pattern.split(".")[-1] for s in SANITIZERS
-)
+SANITIZER_NAMES: frozenset[str] = frozenset(s.pattern.split(".")[-1] for s in SANITIZERS)
 
-PARAMETERIZED_PATTERNS: frozenset[str] = frozenset({
-    "$1", "$2", "$3", "?", ":id", ":name",
-})
+PARAMETERIZED_PATTERNS: frozenset[str] = frozenset(
+    {
+        "$1",
+        "$2",
+        "$3",
+        "?",
+        ":id",
+        ":name",
+    }
+)
 
 
 def is_sanitizer_call(func_text: str) -> bool:
-    for sanitizer in SANITIZERS:
-        if sanitizer.pattern in func_text:
-            return True
-    return False
+    return any(sanitizer.pattern in func_text for sanitizer in SANITIZERS)
 
 
 def is_parameterized_query(query_text: str) -> bool:

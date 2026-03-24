@@ -41,9 +41,7 @@ GENERIC_SOURCES: list[TaintSource] = [
     TaintSource("process.env", "node", "Environment variables (partial taint)"),
 ]
 
-ALL_SOURCES: list[TaintSource] = (
-    EXPRESS_SOURCES + KOA_SOURCES + FASTIFY_SOURCES + GENERIC_SOURCES
-)
+ALL_SOURCES: list[TaintSource] = EXPRESS_SOURCES + KOA_SOURCES + FASTIFY_SOURCES + GENERIC_SOURCES
 
 SOURCE_PATTERNS: frozenset[str] = frozenset(s.pattern for s in ALL_SOURCES)
 
@@ -92,14 +90,8 @@ ALL_SINKS: list[TaintSink] = (
     SQL_SINKS + COMMAND_SINKS + XSS_SINKS + FS_SINKS + HTTP_SINKS + REDIRECT_SINKS
 )
 
-SINK_METHODS: frozenset[str] = frozenset(
-    s.pattern.split(".")[-1] for s in ALL_SINKS
-)
+SINK_METHODS: frozenset[str] = frozenset(s.pattern.split(".")[-1] for s in ALL_SINKS)
 
-SINK_IDENTIFIERS: frozenset[str] = frozenset(
-    s.pattern for s in ALL_SINKS if "." not in s.pattern
-)
+SINK_IDENTIFIERS: frozenset[str] = frozenset(s.pattern for s in ALL_SINKS if "." not in s.pattern)
 
-SINK_MEMBER_PATTERNS: frozenset[str] = frozenset(
-    s.pattern for s in ALL_SINKS if "." in s.pattern
-)
+SINK_MEMBER_PATTERNS: frozenset[str] = frozenset(s.pattern for s in ALL_SINKS if "." in s.pattern)

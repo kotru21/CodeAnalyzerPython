@@ -1,7 +1,7 @@
 from tree_sitter import Node
 
-from analyzer.rules.base import AnalysisContext, BaseRule, RawFinding, RuleMeta
 from analyzer.core.severity import Confidence, Severity
+from analyzer.rules.base import AnalysisContext, BaseRule, RawFinding, RuleMeta
 
 _QUERY_METHODS = frozenset({"query", "raw", "execute", "$queryRaw", "$executeRaw"})
 

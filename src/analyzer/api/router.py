@@ -37,10 +37,7 @@ async def analyze_sync(
 
 @router.get("/rules", response_model=list[RuleInfo])
 async def list_rules(language: str | None = None) -> list[RuleInfo]:
-    if language:
-        rules = get_rules_for_language(language)
-    else:
-        rules = get_all_rules()
+    rules = get_rules_for_language(language) if language else get_all_rules()
     return [
         RuleInfo(
             rule_id=r.meta().rule_id,

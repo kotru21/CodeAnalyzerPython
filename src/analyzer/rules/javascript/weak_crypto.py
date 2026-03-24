@@ -37,9 +37,7 @@ class WeakCryptoRule(BaseRule):
         for child in node.children:
             self._walk(child, ctx, findings)
 
-    def _check_call(
-        self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]
-    ) -> None:
+    def _check_call(self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]) -> None:
         func = node.child_by_field_name("function")
         if func is None:
             return

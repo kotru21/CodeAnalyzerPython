@@ -38,9 +38,7 @@ class SSRFRule(BaseRule):
         for child in node.children:
             self._walk(child, ctx, findings)
 
-    def _check_call(
-        self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]
-    ) -> None:
+    def _check_call(self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]) -> None:
         func = node.child_by_field_name("function")
         args = node.child_by_field_name("arguments")
         if func is None or args is None:
@@ -68,9 +66,10 @@ class SSRFRule(BaseRule):
             return
         if first_arg.type == "string":
             return
-        if first_arg.type == "template_string":
-            if not any(c.type == "template_substitution" for c in first_arg.children):
-                return
+        if first_arg.type == "template_string" and not any(
+            c.type == "template_substitution" for c in first_arg.children
+        ):
+            return
 
         findings.append(
             RawFinding(

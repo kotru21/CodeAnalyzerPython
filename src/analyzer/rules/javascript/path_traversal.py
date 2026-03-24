@@ -3,11 +3,22 @@ from tree_sitter import Node
 from analyzer.core.severity import Confidence, Severity
 from analyzer.rules.base import AnalysisContext, BaseRule, RawFinding, RuleMeta
 
-_FS_METHODS = frozenset({
-    "readFile", "readFileSync", "writeFile", "writeFileSync",
-    "access", "accessSync", "createReadStream", "createWriteStream",
-    "unlink", "unlinkSync", "rmdir", "rmdirSync",
-})
+_FS_METHODS = frozenset(
+    {
+        "readFile",
+        "readFileSync",
+        "writeFile",
+        "writeFileSync",
+        "access",
+        "accessSync",
+        "createReadStream",
+        "createWriteStream",
+        "unlink",
+        "unlinkSync",
+        "rmdir",
+        "rmdirSync",
+    }
+)
 
 
 class PathTraversalRule(BaseRule):
@@ -40,9 +51,7 @@ class PathTraversalRule(BaseRule):
         for child in node.children:
             self._walk(child, ctx, findings)
 
-    def _check_call(
-        self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]
-    ) -> None:
+    def _check_call(self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]) -> None:
         func = node.child_by_field_name("function")
         args = node.child_by_field_name("arguments")
         if func is None or args is None:
@@ -55,9 +64,10 @@ class PathTraversalRule(BaseRule):
             return
         if first_arg.type == "string":
             return
-        if first_arg.type == "template_string":
-            if not any(c.type == "template_substitution" for c in first_arg.children):
-                return
+        if first_arg.type == "template_string" and not any(
+            c.type == "template_substitution" for c in first_arg.children
+        ):
+            return
         findings.append(
             RawFinding(
                 rule_id=self.meta().rule_id,

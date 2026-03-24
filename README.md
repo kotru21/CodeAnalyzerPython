@@ -47,48 +47,45 @@ curl -X POST http://localhost:8000/api/v1/analyze/sync \
 ## Rules
 
 | Rule ID | Vulnerability | Severity |
-|---------|--------------|----------|
+|---------|---------------|----------|
 | JS-SQL-001 | SQL Injection | CRITICAL |
-| JS-CMD-001 | Command Injection | CRITICAL |
 | JS-XSS-001 | Reflected XSS | HIGH |
 | JS-XSS-002 | dangerouslySetInnerHTML | HIGH |
+| JS-CMD-001 | Command Injection | CRITICAL |
 | JS-PATH-001 | Path Traversal | HIGH |
 | JS-PROTO-001 | Prototype Pollution | HIGH |
 | JS-SEC-001 | Hardcoded Secrets | HIGH |
 | JS-DES-001 | Insecure Deserialization | HIGH |
-| JS-NOSQL-001 | NoSQL Injection | HIGH |
-| JS-SSRF-001 | SSRF | HIGH |
 | JS-CRYPTO-001 | Weak Cryptography | MEDIUM |
 | JS-REDIRECT-001 | Open Redirect | MEDIUM |
-| JS-REDOS-001 | Regular Expression DoS | MEDIUM |
+| JS-NOSQL-001 | NoSQL Injection | HIGH |
+| JS-SSRF-001 | SSRF | HIGH |
+| JS-REDOS-001 | ReDoS | MEDIUM |
 
 ## Architecture
 
 ```
 src/analyzer/
-├── api/            # FastAPI router, schemas, dependencies
-├── core/           # Orchestrator, language detection, severity
-├── knowledge/      # CWE database + mapping
-├── models/         # SQLAlchemy ORM models (Scan, Finding)
-├── parsers/        # tree-sitter JS/TS parsers
-├── rules/          # 13 AST-based vulnerability rules
-├── taint/          # Intra-procedural taint tracker
-├── utils/          # Hashing helpers
-└── workers/        # Celery async tasks
+├── api/           # FastAPI router, schemas, dependencies
+├── core/          # Orchestrator, language detection, severity
+├── knowledge/     # CWE database + mapping
+├── models/        # SQLAlchemy ORM models (Scan, Finding)
+├── parsers/       # tree-sitter JS/TS parsers
+├── rules/         # 13 AST-based vulnerability rules
+├── taint/         # Intra-procedural taint tracker
+├── utils/         # Hashing utilities
+└── workers/       # Celery async scan tasks
 ```
 
 ## Configuration
 
-All settings can be overridden via environment variables with the `ANALYZER_` prefix:
+Environment variables (prefix `ANALYZER_`):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ANALYZER_DATABASE_URL` | `postgresql://analyzer:analyzer@localhost:5432/analyzer` | PostgreSQL connection |
 | `ANALYZER_REDIS_URL` | `redis://localhost:6379/0` | Redis connection |
 | `ANALYZER_CELERY_BROKER_URL` | `redis://localhost:6379/1` | Celery broker |
-| `ANALYZER_CELERY_RESULT_BACKEND` | `redis://localhost:6379/2` | Celery results |
-| `ANALYZER_MAX_SYNC_SOURCE_BYTES` | `50000` | Max source size for sync endpoint |
-
-## License
-
-MIT
+| `ANALYZER_CELERY_RESULT_BACKEND` | `redis://localhost:6379/2` | Celery result store |
+| `ANALYZER_MAX_SYNC_SOURCE_BYTES` | `50000` | Max size for sync endpoint |
+| `ANALYZER_DEBUG` | `false` | Debug mode |

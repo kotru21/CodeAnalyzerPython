@@ -34,9 +34,7 @@ class OpenRedirectRule(BaseRule):
         for child in node.children:
             self._walk(child, ctx, findings)
 
-    def _check_redirect(
-        self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]
-    ) -> None:
+    def _check_redirect(self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]) -> None:
         func = node.child_by_field_name("function")
         args = node.child_by_field_name("arguments")
         if func is None or args is None or func.type != "member_expression":
@@ -51,9 +49,7 @@ class OpenRedirectRule(BaseRule):
         if first_arg is None or first_arg.type == "string":
             return
         if first_arg.type == "number":
-            first_arg = next(
-                (c for c in args.children if c.is_named and c != first_arg), None
-            )
+            first_arg = next((c for c in args.children if c.is_named and c != first_arg), None)
             if first_arg is None or first_arg.type == "string":
                 return
 

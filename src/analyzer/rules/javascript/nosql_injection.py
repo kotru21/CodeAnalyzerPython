@@ -3,11 +3,21 @@ from tree_sitter import Node
 from analyzer.core.severity import Confidence, Severity
 from analyzer.rules.base import AnalysisContext, BaseRule, RawFinding, RuleMeta
 
-_MONGO_METHODS = frozenset({
-    "find", "findOne", "findOneAndUpdate", "findOneAndDelete",
-    "updateOne", "updateMany", "deleteOne", "deleteMany",
-    "aggregate", "count", "countDocuments",
-})
+_MONGO_METHODS = frozenset(
+    {
+        "find",
+        "findOne",
+        "findOneAndUpdate",
+        "findOneAndDelete",
+        "updateOne",
+        "updateMany",
+        "deleteOne",
+        "deleteMany",
+        "aggregate",
+        "count",
+        "countDocuments",
+    }
+)
 _DANGEROUS_OPERATORS = frozenset({"$where", "$regex", "$expr"})
 
 
@@ -42,9 +52,7 @@ class NoSQLInjectionRule(BaseRule):
         for child in node.children:
             self._walk(child, ctx, findings)
 
-    def _check_call(
-        self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]
-    ) -> None:
+    def _check_call(self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]) -> None:
         func = node.child_by_field_name("function")
         args = node.child_by_field_name("arguments")
         if func is None or args is None:

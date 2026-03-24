@@ -1,7 +1,5 @@
-import pytest
-
-from tests.conftest import make_js_context
 from analyzer.taint.tracker import TaintTracker
+from tests.conftest import make_js_context
 
 
 class TestTaintTracker:

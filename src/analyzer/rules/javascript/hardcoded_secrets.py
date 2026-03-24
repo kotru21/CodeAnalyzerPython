@@ -1,4 +1,5 @@
 import re
+
 from tree_sitter import Node
 
 from analyzer.core.severity import Confidence, Severity
@@ -49,9 +50,7 @@ class HardcodedSecretsRule(BaseRule):
         for child in node.children:
             self._walk(child, ctx, findings)
 
-    def _check_variable(
-        self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]
-    ) -> None:
+    def _check_variable(self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]) -> None:
         name_node = node.child_by_field_name("name")
         value_node = node.child_by_field_name("value")
         if name_node is None or value_node is None:
@@ -93,7 +92,13 @@ class HardcodedSecretsRule(BaseRule):
         raw = string_node.text.decode() if string_node.text else ""
         value = raw.strip("\"'`")
         return len(value) > 3 and value.lower() not in (
-            "", "null", "none", "undefined", "todo", "changeme", "xxx",
+            "",
+            "null",
+            "none",
+            "undefined",
+            "todo",
+            "changeme",
+            "xxx",
         )
 
     def _make_finding(self, node: Node, ctx: AnalysisContext) -> RawFinding:

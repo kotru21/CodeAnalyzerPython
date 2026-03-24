@@ -1,9 +1,8 @@
 import importlib
 import pkgutil
-from typing import Sequence
+from collections.abc import Sequence
 
 from analyzer.rules.base import BaseRule
-
 
 _registry: list[BaseRule] = []
 _loaded = False
@@ -16,7 +15,7 @@ def _discover_rules() -> None:
 
     import analyzer.rules.javascript as js_pkg
 
-    for importer, modname, ispkg in pkgutil.walk_packages(
+    for _importer, modname, _ispkg in pkgutil.walk_packages(
         js_pkg.__path__, prefix=js_pkg.__name__ + "."
     ):
         importlib.import_module(modname)
