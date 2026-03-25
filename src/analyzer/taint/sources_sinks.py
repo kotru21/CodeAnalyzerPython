@@ -21,6 +21,8 @@ EXPRESS_SOURCES: list[TaintSource] = [
     TaintSource("req.body", "express", "Request body"),
     TaintSource("req.headers", "express", "Request headers"),
     TaintSource("req.cookies", "express", "Request cookies"),
+    TaintSource("req.files", "express", "Multer multi-file uploads"),
+    TaintSource("req.file", "express", "Multer single-file upload"),
 ]
 
 KOA_SOURCES: list[TaintSource] = [
@@ -52,6 +54,8 @@ SQL_SINKS: list[TaintSink] = [
     TaintSink("connection.query", "sql", "Database connection query"),
     TaintSink("sequelize.query", "sql", "Sequelize raw query"),
     TaintSink("knex.raw", "sql", "Knex raw query"),
+    TaintSink("prisma.$queryRaw", "sql", "Prisma raw query (tagged template / call)"),
+    TaintSink("prisma.$executeRaw", "sql", "Prisma raw execute"),
 ]
 
 COMMAND_SINKS: list[TaintSink] = [

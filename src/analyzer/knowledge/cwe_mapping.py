@@ -1,31 +1,13 @@
-RULE_TO_CWE: dict[str, str] = {
-    "JS-SQL-001": "CWE-89",
-    "JS-XSS-001": "CWE-79",
-    "JS-XSS-002": "CWE-79",
-    "JS-CMD-001": "CWE-78",
-    "JS-PATH-001": "CWE-22",
-    "JS-PROTO-001": "CWE-1321",
-    "JS-SEC-001": "CWE-798",
-    "JS-DES-001": "CWE-502",
-    "JS-CRYPTO-001": "CWE-327",
-    "JS-REDIRECT-001": "CWE-601",
-    "JS-NOSQL-001": "CWE-943",
-    "JS-SSRF-001": "CWE-918",
-    "JS-REDOS-001": "CWE-1333",
-}
+"""Taxonomy helpers derived from registered rule metadata (single source of truth)."""
 
-RULE_TO_OWASP: dict[str, str] = {
-    "JS-SQL-001": "A03:2021 Injection",
-    "JS-XSS-001": "A03:2021 Injection",
-    "JS-XSS-002": "A03:2021 Injection",
-    "JS-CMD-001": "A03:2021 Injection",
-    "JS-PATH-001": "A01:2021 Broken Access Control",
-    "JS-PROTO-001": "A03:2021 Injection",
-    "JS-SEC-001": "A07:2021 Identification and Authentication Failures",
-    "JS-DES-001": "A08:2021 Software and Data Integrity Failures",
-    "JS-CRYPTO-001": "A02:2021 Cryptographic Failures",
-    "JS-REDIRECT-001": "A01:2021 Broken Access Control",
-    "JS-NOSQL-001": "A03:2021 Injection",
-    "JS-SSRF-001": "A10:2021 Server-Side Request Forgery",
-    "JS-REDOS-001": "A06:2021 Vulnerable and Outdated Components",
-}
+
+def build_rule_taxonomy() -> dict[str, dict[str, str]]:
+    from analyzer.rules.registry import get_all_rules
+
+    cwe: dict[str, str] = {}
+    owasp: dict[str, str] = {}
+    for rule in get_all_rules():
+        meta = rule.meta()
+        cwe[meta.rule_id] = meta.cwe_id
+        owasp[meta.rule_id] = meta.owasp
+    return {"cwe": cwe, "owasp": owasp}

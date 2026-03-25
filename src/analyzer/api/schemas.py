@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -20,6 +21,11 @@ class AnalyzeRequest(BaseModel):
         description="Force language; auto-detected if omitted",
     )
     config: ScanConfig = Field(default_factory=ScanConfig)
+    scan_id: UUID | None = Field(
+        default=None,
+        description="When set (e.g. async worker), used as report id instead of a new UUID",
+    )
+    response_format: Literal["json", "sarif"] = "json"
 
 
 class FindingLocation(BaseModel):
@@ -64,6 +70,7 @@ class AnalyzeResponse(BaseModel):
     stats: ScanStats
     findings: list[Finding]
     created_at: datetime
+    failed_rules: list[str] = Field(default_factory=list)
 
 
 class AsyncAnalyzeResponse(BaseModel):

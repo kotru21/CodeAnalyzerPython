@@ -1,3 +1,5 @@
+"""Legacy smoke tests; see also test_taint_sources_sinks_matrix and test_taint_interprocedural."""
+
 from analyzer.taint.tracker import TaintTracker
 from tests.conftest import make_js_context
 

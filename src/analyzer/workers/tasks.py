@@ -17,6 +17,7 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    result_expires=604_800,
 )
 
 
@@ -28,6 +29,8 @@ def run_async_scan(
     scan_id: str,
     config: dict | None = None,  # type: ignore[type-arg]
 ) -> dict:  # type: ignore[type-arg]
+    from uuid import UUID
+
     from analyzer.api.dependencies import get_orchestrator
     from analyzer.api.schemas import AnalyzeRequest, ScanConfig
 
@@ -36,6 +39,7 @@ def run_async_scan(
         source_code=source_code,
         file_path=file_path,
         config=scan_config,
+        scan_id=UUID(scan_id),
     )
 
     orchestrator = get_orchestrator()

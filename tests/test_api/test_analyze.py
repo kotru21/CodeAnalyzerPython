@@ -88,3 +88,18 @@ app.get('/run', (req, res) => {
             finding = data["findings"][0]
             assert "CWE-" in finding["cwe_id"]
             assert finding["owasp_category"] != ""
+
+    async def test_analyze_sync_sarif_format(self, client: AsyncClient):
+        resp = await client.post(
+            "/api/v1/analyze/sync",
+            json={
+                "source_code": "const x = 1;",
+                "file_path": "a.js",
+                "config": {"enable_taint": False},
+                "response_format": "sarif",
+            },
+        )
+        assert resp.status_code == 200
+        assert "application/sarif+json" in resp.headers.get("content-type", "")
+        body = resp.json()
+        assert body["version"] == "2.1.0"

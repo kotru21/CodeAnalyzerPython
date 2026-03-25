@@ -31,7 +31,7 @@ class Orchestrator:
 
     def analyze_sync(self, request: AnalyzeRequest) -> AnalyzeResponse:
         start = time.monotonic()
-        scan_id = uuid4()
+        scan_id = request.scan_id if request.scan_id is not None else uuid4()
 
         language = request.language or detect_language(request.file_path)
         parser = get_parser(language=language, file_path=request.file_path)
@@ -51,7 +51,7 @@ class Orchestrator:
             allowed = set(request.config.rule_ids)
             rules = [r for r in rules if r.meta().rule_id in allowed]
 
-        raw_findings = self._run_rules(rules, context)
+        raw_findings, failed_rules = self._run_rules(rules, context)
 
         if request.config.enable_taint:
             taint_flows = self._taint_tracker.analyze(context)
@@ -74,10 +74,14 @@ class Orchestrator:
             stats=stats,
             findings=findings,
             created_at=datetime.now(UTC),
+            failed_rules=failed_rules,
         )
 
-    def _run_rules(self, rules: Sequence[BaseRule], context: AnalysisContext) -> list[RawFinding]:
+    def _run_rules(
+        self, rules: Sequence[BaseRule], context: AnalysisContext
+    ) -> tuple[list[RawFinding], list[str]]:
         results: list[RawFinding] = []
+        failed_rules: list[str] = []
         for rule in rules:
             if rule.should_skip(context):
                 continue
@@ -85,12 +89,15 @@ class Orchestrator:
                 results.extend(rule.run(context))
             except Exception:
                 _logger.exception("Rule %s failed", rule.meta().rule_id)
-        return results
+                failed_rules.append(rule.meta().rule_id)
+        return results, failed_rules
 
     def _taint_to_findings(self, flows: list[TaintFlow]) -> list[RawFinding]:
         results: list[RawFinding] = []
         flow_rule_map = {
             "query": "JS-SQL-001",
+            "$queryRaw": "JS-SQL-001",
+            "$executeRaw": "JS-SQL-001",
             "exec": "JS-CMD-001",
             "execSync": "JS-CMD-001",
             "eval": "JS-CMD-001",

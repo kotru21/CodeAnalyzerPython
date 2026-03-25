@@ -1,9 +1,12 @@
 from typing import Annotated
 from uuid import UUID, uuid4
 
+import redis
+from celery.result import AsyncResult
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 
-from analyzer.api.dependencies import get_orchestrator
+from analyzer.api.dependencies import get_orchestrator, get_redis_client
 from analyzer.api.schemas import (
     AnalyzeRequest,
     AnalyzeResponse,
@@ -13,17 +16,20 @@ from analyzer.api.schemas import (
 )
 from analyzer.config import Settings, get_settings
 from analyzer.core.orchestrator import Orchestrator
+from analyzer.export.sarif import build_sarif_log
 from analyzer.rules.registry import get_all_rules, get_rules_for_language
+from analyzer.services.scan_task_registry import get_task_id, register_scan_task
+from analyzer.workers.tasks import celery_app, run_async_scan
 
 router = APIRouter(prefix="/api/v1")
 
 
-@router.post("/analyze/sync", response_model=AnalyzeResponse)
+@router.post("/analyze/sync", response_model=None)
 async def analyze_sync(
     request: AnalyzeRequest,
     orchestrator: Annotated[Orchestrator, Depends(get_orchestrator)],
     settings: Annotated[Settings, Depends(get_settings)],
-) -> AnalyzeResponse:
+) -> AnalyzeResponse | JSONResponse:
     if len(request.source_code.encode()) > settings.max_sync_source_bytes:
         raise HTTPException(
             status_code=413,
@@ -32,7 +38,16 @@ async def analyze_sync(
                 f"Max: {settings.max_sync_source_bytes} bytes. Use /analyze/async."
             ),
         )
-    return orchestrator.analyze_sync(request)
+    result = orchestrator.analyze_sync(request)
+    if request.response_format == "sarif":
+        doc = build_sarif_log(
+            result,
+            tool_name=settings.app_name,
+            tool_version=settings.app_version,
+            information_uri=settings.sarif_information_uri,
+        )
+        return JSONResponse(content=doc, media_type="application/sarif+json")
+    return result
 
 
 @router.get("/rules", response_model=list[RuleInfo])
@@ -53,16 +68,27 @@ async def list_rules(language: str | None = None) -> list[RuleInfo]:
 
 
 @router.post("/analyze/async", response_model=AsyncAnalyzeResponse)
-async def analyze_async(request: AnalyzeRequest) -> AsyncAnalyzeResponse:
-    from analyzer.workers.tasks import run_async_scan
-
+async def analyze_async(
+    request: AnalyzeRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+    redis_client: Annotated[redis.Redis, Depends(get_redis_client)],
+) -> AsyncAnalyzeResponse:
     scan_id = str(uuid4())
-    task = run_async_scan.delay(
-        source_code=request.source_code,
-        file_path=request.file_path,
-        scan_id=scan_id,
-        config=request.config.model_dump(),
-    )
+    try:
+        task = run_async_scan.delay(
+            source_code=request.source_code,
+            file_path=request.file_path,
+            scan_id=scan_id,
+            config=request.config.model_dump(mode="json"),
+        )
+        register_scan_task(
+            redis_client,
+            scan_id,
+            task.id,
+            settings.scan_task_registry_ttl_seconds,
+        )
+    except redis.RedisError as e:
+        raise HTTPException(status_code=503, detail=f"redis error: {e}") from e
     return AsyncAnalyzeResponse(
         task_id=task.id,
         scan_id=UUID(scan_id),
@@ -72,8 +98,38 @@ async def analyze_async(request: AnalyzeRequest) -> AsyncAnalyzeResponse:
 
 
 @router.get("/results/{scan_id}")
-async def get_results(scan_id: str) -> dict:  # type: ignore[type-arg]
-    return {"scan_id": scan_id, "status": "pending", "message": "Full persistence TBD"}
+async def get_results(
+    scan_id: str,
+    redis_client: Annotated[redis.Redis, Depends(get_redis_client)],
+) -> dict:  # type: ignore[type-arg]
+    try:
+        UUID(scan_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="unknown scan_id") from None
+    try:
+        task_id = get_task_id(redis_client, scan_id)
+    except redis.RedisError as e:
+        raise HTTPException(status_code=503, detail=f"redis error: {e}") from e
+    if not task_id:
+        raise HTTPException(status_code=404, detail="unknown scan_id")
+
+    ar = AsyncResult(task_id, app=celery_app)
+    state = ar.state
+    if state in ("PENDING", "STARTED", "RETRY"):
+        return {"status": "pending", "scan_id": scan_id}
+    if state == "SUCCESS":
+        payload = ar.result
+        if not isinstance(payload, dict):
+            return {
+                "status": "failed",
+                "scan_id": scan_id,
+                "error": "invalid task result",
+            }
+        out = dict(payload)
+        out["status"] = "completed"
+        return out
+    err = str(ar.info) if ar.info is not None else "task failed"
+    return {"status": "failed", "scan_id": scan_id, "error": err}
 
 
 @router.get("/health", response_model=HealthResponse)
