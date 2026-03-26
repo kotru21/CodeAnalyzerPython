@@ -13,7 +13,7 @@ venv/
 htmlcov/
 .coverage
 
-# Local clones (e.g. semgrep-rules for scripts/semgrep_corpus_compare.py)
+# Local clones (e.g. semgrep-rules for scripts/corpus_paper_eval.py)
 .vendor/
 
 eval/results/*.json

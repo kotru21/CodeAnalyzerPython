@@ -4,7 +4,7 @@
 
 **Goal:** One CLI-driven pipeline that scans a frozen local JS/TS tree with Semgrep and the HTTP analyzer, computes per-file, per-bucket line overlap (Policy A or B), and writes `corpus_eval_summary.json` with reproducibility metadata per `docs/superpowers/specs/2026-03-26-external-js-ts-corpus-semgrep-design.md`.
 
-**Architecture:** Add small pure modules under `eval/` for deterministic file listing, path-normalized Semgrep line extraction, and aggregation atop existing `eval/line_overlap.py` (`build_line_overlap_payload`, `greedy_match_lines`). Replace ad-hoc file-level-only reporting in `scripts/semgrep_corpus_compare.py` by delegating to the new library **or** add a parallel script `scripts/corpus_paper_eval.py` that is the supported entry point for papers (keep old script as thin wrapper or deprecate in README—implementation choice in Task 7). No changes to catalog `classify_outcome` or `eval.cli compare` behavior.
+**Architecture:** Add small pure modules under `eval/` for deterministic file listing, path-normalized Semgrep line extraction, and aggregation atop existing `eval/line_overlap.py` (`build_line_overlap_payload`, `greedy_match_lines`). Entry point: `scripts/corpus_paper_eval.py` (legacy `semgrep_corpus_compare.py` removed). No changes to catalog `classify_outcome` or `eval.cli compare` behavior.
 
 **Tech stack:** Python 3.x, existing `httpx`, `eval.backends.semgrep_subprocess.run_semgrep_json_configs`, `eval.rule_map.load_rule_map`, `yaml` (already used).
 
@@ -25,7 +25,7 @@
 | `tests/eval/test_corpus_semgrep_normalize.py` | Synthetic Semgrep results + path normalization. |
 | `tests/eval/test_corpus_agreement.py` | End-to-end aggregation on synthetic findings/results (no Semgrep). |
 | `tests/eval/test_corpus_repro.py` | SHA-256 and optional mocked Semgrep version. |
-| `README.md` | Paper corpus eval subsection + pointer from `semgrep_corpus_compare.py` (single task owns all README edits). |
+| `README.md` | Paper corpus eval subsection (single task owns all README edits). |
 
 **§4 file-universe MVP:** Implement **extension-filtered** `walk` and `git ls-files` only. **Deferred** (document in README + `file_universe_rule` string): honoring `.gitignore` beyond `git ls-files`, max file bytes, and binary detection. The summary must state `file_universe_rule: "walk:rglob_ext=.js,.jsx,.ts,.tsx"` (or `git:ls-files+ext filter`) so the paper matches what was run.
 
@@ -223,7 +223,7 @@ Include tests: `allowed_check_ids=frozenset()` → no lines; `allowed_check_ids=
 
 **Files:**
 - Create: `scripts/corpus_paper_eval.py`
-- Modify: `README.md` (eval / benchmark section); `scripts/semgrep_corpus_compare.py` docstring (one-line pointer)
+- Modify: `README.md` (eval / benchmark section)
 
 - [ ] **Step 1: argparse**
 
@@ -249,7 +249,7 @@ Include tests: `allowed_check_ids=frozenset()` → no lines; `allowed_check_ids=
   3. List files via `list_js_ts_relpaths_*`.
   4. `run_semgrep_json_configs(configs, corpus, timeout_sec=...)`.
   5. Build `results_by_relpath: dict[str, list[dict]]` by bucketing raw Semgrep `results` using `corpus_semgrep_normalize.semgrep_result_relpath`.
-  6. `httpx.Client`: for each relpath, read file, POST like `scripts/semgrep_corpus_compare._analyze_file`, collect findings.
+  6. `httpx.Client`: for each relpath, read file, `POST …/api/v1/analyze/sync`, collect findings.
   7. For each `(relpath, bucket)` compute overlap; append to list; optional `per_unit` detail array (YAGNI: include only if `--verbose-json` flag added; default summary only + optional `top_analyzer_only_files` truncated—defer to keep JSON small unless spec requires; **MVP: global counts + `buckets` list with per-bucket totals only**, not every file).
 
   Clarification for MVP output shape: include `aggregate` global counts plus `by_bucket: { bucket: { matched_line_pairs, ... } }` without per-file matrix to keep file size sane for large corpora; add `--per-file` flag later if needed (out of scope for first PR).
@@ -264,7 +264,7 @@ Include tests: `allowed_check_ids=frozenset()` → no lines; `allowed_check_ids=
 
 - [ ] **Step 4: Gate on pytest only** — optional manual smoke on dev machine is **non-gating**; mark Task 5 done when unit tests pass.
 
-- [ ] **Step 5: README** — add bullet for `corpus_paper_eval.py` (spec link, disclaimer, §4 MVP limitation on file universe, example command); add one-line pointer in `semgrep_corpus_compare.py` docstring.
+- [ ] **Step 5: README** — add bullet for `corpus_paper_eval.py` (spec link, disclaimer, §4 MVP limitation on file universe, example command).
 
 - [ ] **Step 6: Commit** `feat(scripts): corpus_paper_eval for Semgrep agreement summary`
 

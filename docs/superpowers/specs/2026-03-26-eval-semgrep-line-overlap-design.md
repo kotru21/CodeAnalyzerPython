@@ -104,7 +104,7 @@ Dependencies: raw Semgrep `results` per case must remain addressable — today `
 
 ## 8. Phase B (corpus) — forward note only
 
-For `scripts/semgrep_corpus_compare.py` or successors: line-level comparison requires **sidecar labels** (e.g. JSONL: path, line ranges, label) or a curated labeled subset. Without labels, remain at file-level counts. No further design in this document.
+For `scripts/corpus_paper_eval.py` and successors: line-level comparison on arbitrary trees is covered by `docs/superpowers/specs/2026-03-26-external-js-ts-corpus-semgrep-design.md`. Optional oracle metrics still need sidecar labels. No further design in this document.
 
 ---
 
