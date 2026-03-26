@@ -12,3 +12,12 @@ venv/
 .pytest_cache/
 htmlcov/
 .coverage
+
+# Local clones (e.g. semgrep-rules for scripts/semgrep_corpus_compare.py)
+.vendor/
+
+eval/results/*.json
+eval/results/report.md
+eval/results/raw/
+eval/results/compare_summary.json
+!eval/results/.gitkeep

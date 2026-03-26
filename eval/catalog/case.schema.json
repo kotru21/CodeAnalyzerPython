@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local/analyzer-eval-case",
+  "title": "Analyzer benchmark case",
+  "type": "object",
+  "required": [
+    "test_id",
+    "rule_id",
+    "difficulty",
+    "type",
+    "file_path",
+    "source_code",
+    "config",
+    "expected_cwe",
+    "description"
+  ],
+  "properties": {
+    "test_id": { "type": "string" },
+    "rule_id": { "type": "string" },
+    "difficulty": { "type": "string", "enum": ["easy", "medium", "hard"] },
+    "type": { "type": "string", "enum": ["vulnerable", "safe"] },
+    "file_path": { "type": "string" },
+    "source_code": { "type": "string", "minLength": 1 },
+    "config": { "type": "object" },
+    "expected_cwe": { "type": ["string", "null"] },
+    "description": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "expected_rule_ids": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "notes_expected_count": { "type": "integer" }
+  },
+  "additionalProperties": false
+}

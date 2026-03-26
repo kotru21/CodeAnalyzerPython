@@ -1,0 +1,1168 @@
+[
+  {
+    "test_id": "SQL-EASY-VULN-01",
+    "rule_id": "JS-SQL-001",
+    "difficulty": "easy",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "db.query(`SELECT * FROM users WHERE id = ${req.query.id}`);",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-89",
+    "description": "Прямой SQL-шаблон с req.query",
+    "notes_expected_count": 2
+  },
+  {
+    "test_id": "SQL-EASY-SAFE-01",
+    "rule_id": "JS-SQL-001",
+    "difficulty": "easy",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "db.query('SELECT * FROM users WHERE id = $1', [req.query.id]);",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Параметризованный запрос"
+  },
+  {
+    "test_id": "SQL-MED-VULN-01",
+    "rule_id": "JS-SQL-001",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "app.get('/u', (req, res) => {\n  const sort = req.body.order;\n  const q = `SELECT * FROM t ORDER BY ${sort}`;\n  db.query(q);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-89",
+    "description": "Промежуточные переменные и шаблонная строка"
+  },
+  {
+    "test_id": "SQL-MED-SAFE-01",
+    "rule_id": "JS-SQL-001",
+    "difficulty": "medium",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "app.get('/u', (req, res) => {\n  const id = req.query.id;\n  db.query('SELECT * FROM users WHERE id = $1', [id]);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Конкатенация только в параметрах prepared"
+  },
+  {
+    "test_id": "SQL-HARD-VULN-01",
+    "rule_id": "JS-SQL-001",
+    "difficulty": "hard",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "function runQuery(dbConn, sqlText) {\n  dbConn.query(sqlText);\n}\nfunction buildSql(userId) {\n  return `DELETE FROM sessions WHERE uid = '${userId}'`;\n}\napp.get('/x', (req, res) => {\n  const uid = req.params.id;\n  const sql = buildSql(uid);\n  runQuery(db, sql);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-89",
+    "description": "Same-file inter-procedural bare id к sink"
+  },
+  {
+    "test_id": "SQL-HARD-SAFE-01",
+    "rule_id": "JS-SQL-001",
+    "difficulty": "hard",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "function runQuery(dbConn, text, params) {\n  dbConn.query(text, params);\n}\napp.get('/x', (req, res) => {\n  const id = req.query.id;\n  runQuery(db, 'SELECT 1 WHERE id = $1', [id]);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Inter-procedural с параметризованным запросом"
+  },
+  {
+    "test_id": "CMD-EASY-VULN-01",
+    "rule_id": "JS-CMD-001",
+    "difficulty": "easy",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "const { exec } = require('child_process');\nexec(`ls ${req.query.dir}`);",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-78",
+    "description": "exec + template с пользователем",
+    "notes_expected_count": 2
+  },
+  {
+    "test_id": "CMD-EASY-SAFE-01",
+    "rule_id": "JS-CMD-001",
+    "difficulty": "easy",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "const { execFile } = require('child_process');\nexecFile('/bin/ls', ['/tmp'], () => {});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "execFile с массивом аргументов"
+  },
+  {
+    "test_id": "CMD-MED-VULN-01",
+    "rule_id": "JS-CMD-001",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "const { exec } = require('child_process');\napp.get('/r', (req, res) => {\n  const arg = req.body.cmd;\n  let c = 'echo ok';\n  if (req.query.debug) {\n    c = `sh -c ${arg}`;\n  }\n  exec(c);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-78",
+    "description": "Условие и промежуточная строка команды"
+  },
+  {
+    "test_id": "CMD-MED-SAFE-01",
+    "rule_id": "JS-CMD-001",
+    "difficulty": "medium",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "const { execFile } = require('child_process');\napp.get('/r', (req, res) => {\n  const safe = '/usr/bin/true';\n  execFile(safe, [], () => {});\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Только константные пути"
+  },
+  {
+    "test_id": "CMD-HARD-VULN-01",
+    "rule_id": "JS-CMD-001",
+    "difficulty": "hard",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "const { exec } = require('child_process');\nfunction runCmd(shellLine) {\n  exec(shellLine);\n}\nfunction buildLine(u) {\n  return `grep ${u} /etc/passwd`;\n}\napp.get('/s', (req, res) => {\n  const line = buildLine(req.query.u);\n  runCmd(line);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-78",
+    "description": "Цепочка функций same-file"
+  },
+  {
+    "test_id": "CMD-HARD-SAFE-01",
+    "rule_id": "JS-CMD-001",
+    "difficulty": "hard",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "const { execFile } = require('child_process');\nfunction runBin(path, args) {\n  execFile(path, args, () => {});\n}\napp.get('/s', (req, res) => {\n  runBin('/bin/echo', ['static']);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "execFile через helper"
+  },
+  {
+    "test_id": "XSS1-EASY-VULN-01",
+    "rule_id": "JS-XSS-001",
+    "difficulty": "easy",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "document.body.innerHTML = req.query.x;",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-79",
+    "description": "innerHTML с пользовательским вводом"
+  },
+  {
+    "test_id": "XSS1-EASY-SAFE-01",
+    "rule_id": "JS-XSS-001",
+    "difficulty": "easy",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "document.body.textContent = req.query.x;",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "textContent вместо innerHTML"
+  },
+  {
+    "test_id": "XSS1-MED-VULN-01",
+    "rule_id": "JS-XSS-001",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "app.get('/p', (req, res) => {\n  const html = req.body.fragment;\n  if (html) {\n    document.body.innerHTML = html;\n  }\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-79",
+    "description": "innerHTML через переменную из req.body"
+  },
+  {
+    "test_id": "XSS1-MED-SAFE-01",
+    "rule_id": "JS-XSS-001",
+    "difficulty": "medium",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "app.get('/p', (req, res) => {\n  const t = req.body.title;\n  const el = document.createElement('span');\n  el.textContent = t;\n  document.body.appendChild(el);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Создание текстового узла"
+  },
+  {
+    "test_id": "XSS1-HARD-VULN-01",
+    "rule_id": "JS-XSS-001",
+    "difficulty": "hard",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "function setHtml(node, val) {\n  node.innerHTML = val;\n}\nfunction pick(req) {\n  return req.query.h;\n}\nconst el = document.getElementById('root');\napp.get('/z', (req, res) => {\n  setHtml(el, pick(req));\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-79",
+    "description": "Inter-procedural доставка значения в innerHTML"
+  },
+  {
+    "test_id": "XSS1-HARD-SAFE-01",
+    "rule_id": "JS-XSS-001",
+    "difficulty": "hard",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "function setText(node, val) {\n  node.textContent = val;\n}\napp.get('/z', (req, res) => {\n  setText(document.body, req.query.t);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Доставка в textContent"
+  },
+  {
+    "test_id": "XSS2-EASY-VULN-01",
+    "rule_id": "JS-XSS-002",
+    "difficulty": "easy",
+    "type": "vulnerable",
+    "file_path": "view.jsx",
+    "source_code": "const x = <div dangerouslySetInnerHTML={{ __html: req.query.block }} />;",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-79",
+    "description": "dangerouslySetInnerHTML с вводом"
+  },
+  {
+    "test_id": "XSS2-EASY-SAFE-01",
+    "rule_id": "JS-XSS-002",
+    "difficulty": "easy",
+    "type": "safe",
+    "file_path": "view.jsx",
+    "source_code": "const x = <div>Hello</div>;",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Без dangerouslySetInnerHTML (правило не должно срабатывать)"
+  },
+  {
+    "test_id": "XSS2-MED-VULN-01",
+    "rule_id": "JS-XSS-002",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "view.jsx",
+    "source_code": "const fragment = req.body.html;\nconst el = <section dangerouslySetInnerHTML={{ __html: fragment }} />;",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-79",
+    "description": "Промежуточная переменная"
+  },
+  {
+    "test_id": "XSS2-MED-SAFE-01",
+    "rule_id": "JS-XSS-002",
+    "difficulty": "medium",
+    "type": "safe",
+    "file_path": "view.jsx",
+    "source_code": "const fragment = '<b>static</b>';\nconst el = <article>{fragment}</article>;",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Статическая разметка в children"
+  },
+  {
+    "test_id": "XSS2-HARD-VULN-01",
+    "rule_id": "JS-XSS-002",
+    "difficulty": "hard",
+    "type": "vulnerable",
+    "file_path": "view.tsx",
+    "source_code": "import type { Request } from 'express';\nfunction Widget(props: { r: Request }) {\n  return <div dangerouslySetInnerHTML={{ __html: props.r.query.x as string }} />;\n}",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-79",
+    "description": "TypeScript + JSX"
+  },
+  {
+    "test_id": "XSS2-HARD-SAFE-01",
+    "rule_id": "JS-XSS-002",
+    "difficulty": "hard",
+    "type": "safe",
+    "file_path": "view.tsx",
+    "source_code": "import type { FC } from 'react';\nconst Box: FC<{ t: string }> = ({ t }) => <div>{t}</div>;",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "TS-компонент без опасного атрибута"
+  },
+  {
+    "test_id": "PATH-EASY-VULN-01",
+    "rule_id": "JS-PATH-001",
+    "difficulty": "easy",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "const fs = require('fs');\nfs.readFileSync(`./data/${req.query.name}`);",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-22",
+    "description": "Путь из шаблонной строки"
+  },
+  {
+    "test_id": "PATH-EASY-SAFE-01",
+    "rule_id": "JS-PATH-001",
+    "difficulty": "easy",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "const fs = require('fs');\nfs.readFileSync('/var/app/readme.txt');",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Константный путь"
+  },
+  {
+    "test_id": "PATH-MED-VULN-01",
+    "rule_id": "JS-PATH-001",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "const fs = require('fs');\napp.get('/f', (req, res) => {\n  const base = './uploads/';\n  const name = req.body.filename;\n  const p = base + name;\n  fs.readFileSync(p);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-22",
+    "description": "Конкатенация пути"
+  },
+  {
+    "test_id": "PATH-MED-SAFE-01",
+    "rule_id": "JS-PATH-001",
+    "difficulty": "medium",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "const fs = require('fs');\nconst ALLOW = new Set(['a.txt', 'b.txt']);\napp.get('/f', (req, res) => {\n  const name = req.query.n;\n  if (!ALLOW.has(name)) return;\n  fs.readFileSync('/var/safe/' + name);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Allowlist имён (код всё ещё может быть спорным для анализатора)"
+  },
+  {
+    "test_id": "PATH-HARD-VULN-01",
+    "rule_id": "JS-PATH-001",
+    "difficulty": "hard",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "const fs = require('fs');\nfunction load(pathStr) {\n  fs.readFileSync(pathStr);\n}\nfunction buildPath(seg) {\n  return `/tmp/${seg}`;\n}\napp.get('/p', (req, res) => {\n  load(buildPath(req.query.s));\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-22",
+    "description": "Inter-procedural путь"
+  },
+  {
+    "test_id": "PATH-HARD-SAFE-01",
+    "rule_id": "JS-PATH-001",
+    "difficulty": "hard",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "const fs = require('fs');\nfunction load(pathStr) {\n  fs.readFileSync(pathStr);\n}\napp.get('/p', (req, res) => {\n  load('/etc/hostname');\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Только константа до sink"
+  },
+  {
+    "test_id": "PROTO-EASY-VULN-01",
+    "rule_id": "JS-PROTO-001",
+    "difficulty": "easy",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "const target = {};\nconst src = payload;\nfor (const k in src) {\n  target[k] = src[k];\n}",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-1321",
+    "description": "for-in merge без фильтра опасных ключей"
+  },
+  {
+    "test_id": "PROTO-EASY-SAFE-01",
+    "rule_id": "JS-PROTO-001",
+    "difficulty": "easy",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "const target = {};\nfor (const k in src) {\n  if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;\n  target[k] = src[k];\n}",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Явный фильтр ключей"
+  },
+  {
+    "test_id": "PROTO-MED-VULN-01",
+    "rule_id": "JS-PROTO-001",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "app.post('/m', (req, res) => {\n  const body = req.body;\n  const out = {};\n  for (const key in body) {\n    out[key] = body[key];\n  }\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-1321",
+    "description": "Слияние req.body"
+  },
+  {
+    "test_id": "PROTO-MED-SAFE-01",
+    "rule_id": "JS-PROTO-001",
+    "difficulty": "medium",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "app.post('/m', (req, res) => {\n  const body = req.body;\n  const out = Object.create(null);\n  for (const key of Object.keys(body)) {\n    if (['__proto__', 'constructor', 'prototype'].includes(key)) continue;\n    out[key] = body[key];\n  }\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Object.create(null) и фильтр"
+  },
+  {
+    "test_id": "PROTO-HARD-VULN-01",
+    "rule_id": "JS-PROTO-001",
+    "difficulty": "hard",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "function merge(dst, src) {\n  for (const k in src) {\n    dst[k] = src[k];\n  }\n}\napp.get('/x', (req, res) => {\n  const o = {};\n  merge(o, req.query);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-1321",
+    "description": "Helper merge"
+  },
+  {
+    "test_id": "PROTO-HARD-SAFE-01",
+    "rule_id": "JS-PROTO-001",
+    "difficulty": "hard",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "function safeMerge(dst, src) {\n  for (const k of Object.keys(src)) {\n    if (k === '__proto__') continue;\n    dst[k] = src[k];\n  }\n}\napp.get('/x', (req, res) => {\n  safeMerge({}, { a: 1 });\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Безопасный merge без пользовательского объекта целиком"
+  },
+  {
+    "test_id": "REDIR-EASY-VULN-01",
+    "rule_id": "JS-REDIRECT-001",
+    "difficulty": "easy",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "res.redirect(req.query.next);",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-601",
+    "description": "Редирект на пользовательский URL"
+  },
+  {
+    "test_id": "REDIR-EASY-SAFE-01",
+    "rule_id": "JS-REDIRECT-001",
+    "difficulty": "easy",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "res.redirect('/dashboard');",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Константный путь"
+  },
+  {
+    "test_id": "REDIR-MED-VULN-01",
+    "rule_id": "JS-REDIRECT-001",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "app.get('/go', (req, res) => {\n  const u = req.body.url;\n  if (u) {\n    res.redirect(u);\n  }\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-601",
+    "description": "redirect из req.body"
+  },
+  {
+    "test_id": "REDIR-MED-SAFE-01",
+    "rule_id": "JS-REDIRECT-001",
+    "difficulty": "medium",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "app.get('/go', (req, res) => {\n  const page = req.query.p;\n  const map = { home: '/home', about: '/about' };\n  res.redirect(map[page] || '/home');\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Только относительные пути из словаря"
+  },
+  {
+    "test_id": "REDIR-HARD-VULN-01",
+    "rule_id": "JS-REDIRECT-001",
+    "difficulty": "hard",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "function sendRedirect(res, loc) {\n  res.redirect(loc);\n}\napp.get('/x', (req, res) => {\n  sendRedirect(res, req.query.to);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-601",
+    "description": "Inter-procedural redirect"
+  },
+  {
+    "test_id": "REDIR-HARD-SAFE-01",
+    "rule_id": "JS-REDIRECT-001",
+    "difficulty": "hard",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "function sendRedirect(res, loc) {\n  res.redirect(loc);\n}\napp.get('/x', (req, res) => {\n  sendRedirect(res, '/ok');\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Константа в helper"
+  },
+  {
+    "test_id": "SEC-EASY-VULN-01",
+    "rule_id": "JS-SEC-001",
+    "difficulty": "easy",
+    "type": "vulnerable",
+    "file_path": "config.js",
+    "source_code": "const apiKey = 'HARDCODED_BENCHMARK_SECRET_NOT_A_REAL_VENDOR_KEY';",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-798",
+    "description": "Хардкод ключа"
+  },
+  {
+    "test_id": "SEC-EASY-SAFE-01",
+    "rule_id": "JS-SEC-001",
+    "difficulty": "easy",
+    "type": "safe",
+    "file_path": "config.js",
+    "source_code": "const apiKey = process.env.API_KEY;",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Секрет из окружения"
+  },
+  {
+    "test_id": "SEC-MED-VULN-01",
+    "rule_id": "JS-SEC-001",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "config.js",
+    "source_code": "const cfg = {\n  password: 'MyVerySecretPassword2024!',\n  host: 'db.local',\n};",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-798",
+    "description": "Секрет в объекте"
+  },
+  {
+    "test_id": "SEC-MED-SAFE-01",
+    "rule_id": "JS-SEC-001",
+    "difficulty": "medium",
+    "type": "safe",
+    "file_path": "config.js",
+    "source_code": "const cfg = {\n  password: process.env.DB_PASSWORD,\n  host: 'db.local',\n};",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Пароль из env"
+  },
+  {
+    "test_id": "SEC-HARD-VULN-01",
+    "rule_id": "JS-SEC-001",
+    "difficulty": "hard",
+    "type": "vulnerable",
+    "file_path": "config.js",
+    "source_code": "function loadSecrets() {\n  const token = 'ghp_abcdefghijklmnopqrstuvwxyz0123456789';\n  return token;\n}\nmodule.exports = { loadSecrets };",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-798",
+    "description": "Секрет внутри функции"
+  },
+  {
+    "test_id": "SEC-HARD-SAFE-01",
+    "rule_id": "JS-SEC-001",
+    "difficulty": "hard",
+    "type": "safe",
+    "file_path": "config.js",
+    "source_code": "function loadSecrets() {\n  return process.env.GITHUB_TOKEN;\n}\nmodule.exports = { loadSecrets };",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Токен только из env"
+  },
+  {
+    "test_id": "DES-EASY-VULN-01",
+    "rule_id": "JS-DES-001",
+    "difficulty": "easy",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "eval(Buffer.from(req.body.payload, 'base64').toString());",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-502",
+    "description": "eval над декодированным буфером"
+  },
+  {
+    "test_id": "DES-EASY-SAFE-01",
+    "rule_id": "JS-DES-001",
+    "difficulty": "easy",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "const x = JSON.parse('{\"a\":1}');",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "JSON.parse литерала"
+  },
+  {
+    "test_id": "DES-MED-VULN-01",
+    "rule_id": "JS-DES-001",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "app.post('/x', (req, res) => {\n  const raw = req.body.data;\n  eval(Buffer.from(raw, 'base64').toString());\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-502",
+    "description": "req.body в eval/Buffer"
+  },
+  {
+    "test_id": "DES-MED-SAFE-01",
+    "rule_id": "JS-DES-001",
+    "difficulty": "medium",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "app.post('/x', (req, res) => {\n  const raw = req.body.json;\n  const obj = JSON.parse(raw);\n  res.json(obj);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "JSON.parse без eval"
+  },
+  {
+    "test_id": "DES-HARD-VULN-01",
+    "rule_id": "JS-DES-001",
+    "difficulty": "hard",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "function runUserCode(buf) {\n  eval(Buffer.from(buf, 'hex').toString());\n}\napp.get('/y', (req, res) => {\n  runUserCode(req.query.q);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-502",
+    "description": "Inter-procedural eval+Buffer"
+  },
+  {
+    "test_id": "DES-HARD-SAFE-01",
+    "rule_id": "JS-DES-001",
+    "difficulty": "hard",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "function parseJson(s) {\n  return JSON.parse(s);\n}\napp.get('/y', (req, res) => {\n  parseJson('{}');\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Только статический JSON"
+  },
+  {
+    "test_id": "CRYPTO-EASY-VULN-01",
+    "rule_id": "JS-CRYPTO-001",
+    "difficulty": "easy",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "const crypto = require('crypto');\ncrypto.createHash('md5').update('x').digest('hex');",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-327",
+    "description": "MD5"
+  },
+  {
+    "test_id": "CRYPTO-EASY-SAFE-01",
+    "rule_id": "JS-CRYPTO-001",
+    "difficulty": "easy",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "const crypto = require('crypto');\ncrypto.createHash('sha256').update('x').digest('hex');",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "SHA-256"
+  },
+  {
+    "test_id": "CRYPTO-MED-VULN-01",
+    "rule_id": "JS-CRYPTO-001",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "const crypto = require('crypto');\napp.get('/t', (req, res) => {\n  const h = crypto.createHash('sha1');\n  h.update(req.query.s);\n  res.send(h.digest('hex'));\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-327",
+    "description": "SHA1"
+  },
+  {
+    "test_id": "CRYPTO-MED-SAFE-01",
+    "rule_id": "JS-CRYPTO-001",
+    "difficulty": "medium",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "const crypto = require('crypto');\napp.get('/t', (req, res) => {\n  const h = crypto.createHash('sha512');\n  h.update(req.query.s);\n  res.send(h.digest('hex'));\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "SHA-512"
+  },
+  {
+    "test_id": "CRYPTO-HARD-VULN-01",
+    "rule_id": "JS-CRYPTO-001",
+    "difficulty": "hard",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "const crypto = require('crypto');\nfunction makeCipher() {\n  return crypto.createCipheriv('des-ede3-cbc', Buffer.alloc(24), Buffer.alloc(8));\n}\nmakeCipher();",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-327",
+    "description": "3DES"
+  },
+  {
+    "test_id": "CRYPTO-HARD-SAFE-01",
+    "rule_id": "JS-CRYPTO-001",
+    "difficulty": "hard",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "const crypto = require('crypto');\nfunction token() {\n  return crypto.randomBytes(16).toString('hex');\n}\ntoken();",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "randomBytes"
+  },
+  {
+    "test_id": "NOSQL-EASY-VULN-01",
+    "rule_id": "JS-NOSQL-001",
+    "difficulty": "easy",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "users.find(req.body);",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-943",
+    "description": "find с req.body"
+  },
+  {
+    "test_id": "NOSQL-EASY-SAFE-01",
+    "rule_id": "JS-NOSQL-001",
+    "difficulty": "easy",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "users.find({ name: 'alice' });",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Статический запрос"
+  },
+  {
+    "test_id": "NOSQL-MED-VULN-01",
+    "rule_id": "JS-NOSQL-001",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "app.post('/q', (req, res) => {\n  const q = req.body;\n  db.items.find(q);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-943",
+    "description": "Промежуточная переменная"
+  },
+  {
+    "test_id": "NOSQL-MED-SAFE-01",
+    "rule_id": "JS-NOSQL-001",
+    "difficulty": "medium",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "app.post('/q', (req, res) => {\n  const id = req.body.id;\n  db.items.find({ _id: id });\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Только поле id"
+  },
+  {
+    "test_id": "NOSQL-HARD-VULN-01",
+    "rule_id": "JS-NOSQL-001",
+    "difficulty": "hard",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "function runFind(model, query) {\n  model.find(query);\n}\napp.get('/z', (req, res) => {\n  runFind(users, req.query.filter);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-943",
+    "description": "Inter-procedural find"
+  },
+  {
+    "test_id": "NOSQL-HARD-SAFE-01",
+    "rule_id": "JS-NOSQL-001",
+    "difficulty": "hard",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "function runFind(model, query) {\n  model.find(query);\n}\napp.get('/z', (req, res) => {\n  runFind(users, { status: 'open' });\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Константный фильтр"
+  },
+  {
+    "test_id": "SSRF-EASY-VULN-01",
+    "rule_id": "JS-SSRF-001",
+    "difficulty": "easy",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "fetch(req.query.url);",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-918",
+    "description": "fetch с URL из query"
+  },
+  {
+    "test_id": "SSRF-EASY-SAFE-01",
+    "rule_id": "JS-SSRF-001",
+    "difficulty": "easy",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "fetch('https://example.com/api');",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Константный URL"
+  },
+  {
+    "test_id": "SSRF-MED-VULN-01",
+    "rule_id": "JS-SSRF-001",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "app.get('/p', (req, res) => {\n  const target = req.body.endpoint;\n  axios.get(target);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-918",
+    "description": "axios.get"
+  },
+  {
+    "test_id": "SSRF-MED-SAFE-01",
+    "rule_id": "JS-SSRF-001",
+    "difficulty": "medium",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "app.get('/p', (req, res) => {\n  axios.get('https://api.example.com/v1/status');\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Фиксированный endpoint"
+  },
+  {
+    "test_id": "SSRF-HARD-VULN-01",
+    "rule_id": "JS-SSRF-001",
+    "difficulty": "hard",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "function pull(client, url) {\n  return client.get(url);\n}\napp.get('/x', (req, res) => {\n  pull(axios, req.query.u);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-918",
+    "description": "Inter-procedural HTTP"
+  },
+  {
+    "test_id": "SSRF-HARD-SAFE-01",
+    "rule_id": "JS-SSRF-001",
+    "difficulty": "hard",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "function pull(client, url) {\n  return client.get(url);\n}\napp.get('/x', (req, res) => {\n  pull(axios, 'https://example.com');\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Константный URL в helper"
+  },
+  {
+    "test_id": "REDOS-EASY-VULN-01",
+    "rule_id": "JS-REDOS-001",
+    "difficulty": "easy",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "new RegExp(req.query.pat);",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-1333",
+    "description": "RegExp из пользователя"
+  },
+  {
+    "test_id": "REDOS-EASY-SAFE-01",
+    "rule_id": "JS-REDOS-001",
+    "difficulty": "easy",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "new RegExp('^[a-z0-9]+$');",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Статический паттерн"
+  },
+  {
+    "test_id": "REDOS-MED-VULN-01",
+    "rule_id": "JS-REDOS-001",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "app.get('/r', (req, res) => {\n  const p = req.body.regex;\n  const re = new RegExp(p);\n  re.test('abc');\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-1333",
+    "description": "Паттерн из body"
+  },
+  {
+    "test_id": "REDOS-MED-SAFE-01",
+    "rule_id": "JS-REDOS-001",
+    "difficulty": "medium",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "app.get('/r', (req, res) => {\n  const re = new RegExp('^\\\\d+$');\n  re.test(req.body.s);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Статический regex, пользователь только в test()"
+  },
+  {
+    "test_id": "REDOS-HARD-VULN-01",
+    "rule_id": "JS-REDOS-001",
+    "difficulty": "hard",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "function buildRe(src) {\n  return new RegExp(src);\n}\napp.get('/t', (req, res) => {\n  buildRe(req.query.r);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-1333",
+    "description": "Helper new RegExp"
+  },
+  {
+    "test_id": "REDOS-HARD-SAFE-01",
+    "rule_id": "JS-REDOS-001",
+    "difficulty": "hard",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "function buildRe() {\n  return new RegExp('abc');\n}\napp.get('/t', (req, res) => {\n  buildRe();\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Без пользовательского ввода в RegExp"
+  },
+  {
+    "test_id": "SPECIAL-TAINT-INTERPROC-SQL",
+    "rule_id": "JS-SQL-001",
+    "difficulty": "hard",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "function runQuery(q) {\n  db.query(q);\n}\napp.get('/', (req, res) => {\n  runQuery(`SELECT * FROM t WHERE x = '${req.body.name}'`);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-89",
+    "description": "Классический same-file bare id (README-пример)",
+    "tags": [
+      "special:taint-interproc"
+    ]
+  },
+  {
+    "test_id": "SPECIAL-TAINT-BOUNDARY-OBJMETHOD",
+    "rule_id": "JS-SQL-001",
+    "difficulty": "hard",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "const svc = {\n  run(q) {\n    db.query(`SELECT 1 WHERE z = '${q}'`);\n  },\n};\napp.get('/x', (req, res) => {\n  svc.run(req.query.id);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-89",
+    "description": "Вызов obj.method(req): ограничение taint; AST может всё ещё дать finding",
+    "tags": [
+      "special:taint-boundary"
+    ]
+  },
+  {
+    "test_id": "SPECIAL-TS-SQL",
+    "rule_id": "JS-SQL-001",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "routes.ts",
+    "source_code": "import type { Request, Response } from 'express';\nexport function h(req: Request, res: Response): void {\n  const id: string = String(req.query.id);\n  db.query(`SELECT * FROM users WHERE id = '${id}'`);\n}",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-89",
+    "description": "Тот же SQL-паттерн в TypeScript",
+    "tags": [
+      "special:typescript"
+    ]
+  },
+  {
+    "test_id": "SPECIAL-MULTI-VULN",
+    "rule_id": "MULTI",
+    "difficulty": "hard",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "const { exec } = require('child_process');\napp.get('/bad', (req, res) => {\n  db.query(`SELECT * FROM u WHERE id = ${req.query.a}`);\n  exec(`echo ${req.query.b}`);\n  fetch(req.query.c);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Три разных класса в одном файле",
+    "tags": [
+      "special:multi-vuln"
+    ],
+    "expected_rule_ids": [
+      "JS-SQL-001",
+      "JS-CMD-001",
+      "JS-SSRF-001"
+    ]
+  },
+  {
+    "test_id": "SPECIAL-LARGE-SAFE",
+    "rule_id": "JS-SQL-001",
+    "difficulty": "hard",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "const crypto = require('crypto');\nfunction add(a, b) {\n  return a + b;\n}\nfunction hash(s) {\n  return crypto.createHash('sha256').update(s).digest('hex');\n}\nconst x = add(1, 2);\nconst y = hash('hello');\nconst z = JSON.stringify({ a: 1, b: 2 });\nconsole.log(x, y, z);\nfunction greet(name) {\n  return `Hello, ${name}`;\n}\nmodule.exports = { add, hash, greet };\nconst items = [1, 2, 3].map((n) => n * 2);\nconst sum = items.reduce((a, b) => a + b, 0);\nconst obj = { ...{ k: 1 }, m: 2 };\nconst keys = Object.keys(obj);\nif (keys.length > 0) {\n  console.log(keys[0]);\n}\nconst p = new Promise((resolve) => resolve(1));\np.then((v) => v + 1);\nasync function af() {\n  return 42;\n}\nvoid af();\n",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Длинный фрагмент без уязвимых sink'ов (ожидается 0 findings)",
+    "tags": [
+      "special:large-safe"
+    ]
+  },
+  {
+    "test_id": "SPECIAL-EDGE-DESTRUCT",
+    "rule_id": "JS-SQL-001",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "app.get('/d', (req, res) => {\n  const { id } = req.params;\n  db.query(`SELECT * FROM t WHERE id = '${id}'`);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-89",
+    "description": "Деструктуризация req.params",
+    "tags": [
+      "special:edge-taint"
+    ]
+  },
+  {
+    "test_id": "SPECIAL-EDGE-SPREAD",
+    "rule_id": "JS-NOSQL-001",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "app.post('/s', (req, res) => {\n  const q = { ...req.body, limit: 10 };\n  users.find(q);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-943",
+    "description": "spread req.body в объект запроса",
+    "tags": [
+      "special:edge-taint"
+    ]
+  },
+  {
+    "test_id": "SPECIAL-EDGE-OPTIONAL",
+    "rule_id": "JS-SSRF-001",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "fetch(req?.query?.url);",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-918",
+    "description": "optional chaining на req",
+    "tags": [
+      "special:edge-taint"
+    ]
+  },
+  {
+    "test_id": "SPECIAL-DUP-LINE-SQL",
+    "rule_id": "JS-SQL-001",
+    "difficulty": "easy",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "db.query(`SELECT * FROM u WHERE id = ${req.query.id}`);",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-89",
+    "description": "Одна строка — ожидается возможный дубль AST+taint (наблюдение)",
+    "tags": [
+      "special:duplicate-observe"
+    ],
+    "notes_expected_count": 2
+  }
+]

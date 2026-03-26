@@ -172,9 +172,38 @@ app.get('/', (req, res) => {
 
 - **Sources:** Express-style `req.*` (including Multer `req.file` / `req.files`), Koa, Fastify, `process.*`, etc. — see `src/analyzer/taint/sources_sinks.py`.
 - **Sinks:** SQL (`db.query`, Prisma `$queryRaw` / `$executeRaw`, …), `exec`/`eval`, `fs.*`, redirects, etc.
+- **Parameterized SQL:** for calls like `db.query('… $1 …', [values])`, taint only in the values argument is treated as binding, not as SQL text injection (see `tracker.py`).
 - **Same-file inter-procedural:** if the callee is a bare identifier (`run(x)`), the analyzer binds taint from actual arguments into the callee’s parameters and re-walks that function body (depth capped at `MAX_INTERPROC_DEPTH` in `tracker.py`, default 5). **Not supported:** `obj.method()`, optional chaining, cross-file calls.
 - **Pattern overlap:** longer `req.*` patterns are preferred (e.g. `req.files` over `req.file`) when both match.
 - **Tests:** `tests/test_taint/test_taint_sources_sinks_matrix.py`, `tests/test_taint/test_taint_interprocedural.py`, `tests/test_taint/test_js_taint.py`.
+
+## Evaluation benchmark
+
+Single-file HTTP benchmark for precision/recall style scoring (see `docs/superpowers/plans/2026-03-26-analyzer-effectiveness-evaluation.md`).
+
+1. Regenerate the JSON catalog after editing Python case definitions: `py -3 -m eval.build_cases`
+2. Start the stack: `docker compose up --build` (needs API on port 8000 and, for async checks, the `worker` service)
+3. Run sync scans and write `eval/results/report.md` plus raw JSON: `py -3 -m eval.cli run --base-url http://localhost:8000` (or `py -3 -m eval.run_evaluation …`, same flags)
+4. Optional multi-backend compare (Semgrep + HTTP analyzer): `py -3 -m eval.cli compare --base-url http://localhost:8000` (needs Semgrep on PATH and entries in `eval/catalog/rule_map.yaml`, or pass `--semgrep-config <path>`)
+5. SARIF smoke: `py -3 -m eval.sarif_smoke --base-url http://localhost:8000`
+6. Async vs sync comparison: `py -3 -m eval.async_compare --base-url http://localhost:8000`
+7. **Semgrep cross-check (optional):** clone [semgrep-rules](https://github.com/semgrep/semgrep-rules), install the [Semgrep CLI](https://semgrep.dev/docs/getting-started/), then run `scripts/semgrep_corpus_compare.py` (see module docstring). Point `--corpus` at e.g. `semgrep-rules/javascript`; for **NodeGoat**, use the same script with `--corpus` set to the cloned app source and a JS rule pack as `--semgrep-config`.
+
+### Semgrep-rules `javascript/` snapshot (reference)
+
+Recorded on one machine for **orientation only**: Semgrep and this service use different rule sets and severities, so totals are **not** precision/recall against a shared ground truth.
+
+| Item | Value |
+|------|--------|
+| **Corpus** | [semgrep-rules](https://github.com/semgrep/semgrep-rules) path `javascript/`, shallow clone **`28db38e`** |
+| **Files** | 174 (`.js` / `.jsx` / `.ts` / `.tsx` under that tree) |
+| **Semgrep** | CLI **1.156.0**, `--config` = same `javascript/` tree, **897** result rows (matches) |
+| **This analyzer** | API **0.1.0**, **13** rules, taint on, **215** findings summed over the same files (single-file `POST /api/v1/analyze/sync` per file) |
+| **Per-file overlap** | **50** files where both tools had ≥1 finding; **124** Semgrep-only; **0** analyzer-only |
+| **HTTP errors** | **0** |
+| **Raw output** | `eval/results/semgrep_compare.json` (gitignored; regenerate with the script) |
+
+`eval/results/*.json` and `report.md` are gitignored; committed sources live under `eval/catalog/` and `eval/cases_pack/`.
 
 ## Architecture
 

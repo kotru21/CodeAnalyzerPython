@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "results": [
+    {
+      "check_id": "javascript.lang.security.test-rule",
+      "path": "/tmp/snippet.js",
+      "start": { "line": 7 }
+    }
+  ],
+  "errors": []
+}

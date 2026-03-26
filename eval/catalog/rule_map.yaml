@@ -1,0 +1,3 @@
+version: 1
+# Maps analyzer rule_id -> list of Semgrep --config paths (repo-relative or absolute).
+rules: {}
