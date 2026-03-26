@@ -155,3 +155,14 @@ app.get('/', (req, res) => {
 """
         flows = TaintTracker().analyze(make_js_context(code))
         assert_any_flow(flows, sink_method="query", source_substr="req.body")
+
+    def test_intermediate_var_template__positive__sql_med_shape(self) -> None:
+        code = """
+app.get('/u', (req, res) => {
+  const sort = req.body.order;
+  const q = `SELECT * FROM t ORDER BY ${sort}`;
+  db.query(q);
+});
+"""
+        flows = TaintTracker().analyze(make_js_context(code))
+        assert_any_flow(flows, sink_method="query", source_substr="req.body")

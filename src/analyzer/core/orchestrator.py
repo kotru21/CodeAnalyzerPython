@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from analyzer.api.schemas import (
+    AnalyzeBundleRequest,
     AnalyzeRequest,
     AnalyzeResponse,
     Finding,
@@ -17,7 +18,7 @@ from analyzer.knowledge.cwe_database import CWEDatabase
 from analyzer.parsers.factory import get_parser
 from analyzer.rules.base import AnalysisContext, BaseRule, RawFinding
 from analyzer.rules.registry import get_rules_for_language
-from analyzer.taint.tracker import TaintFlow, TaintTracker
+from analyzer.taint.tracker import TaintFlow, TaintTracker, merge_fn_index_from_roots
 from analyzer.utils.hash import md5_fingerprint
 
 _logger = logging.getLogger(__name__)
@@ -60,18 +61,24 @@ class Orchestrator:
 
         if request.config.enable_taint and not time_budget_exceeded:
             taint_flows = self._taint_tracker.analyze(context)
-            raw_findings.extend(self._taint_to_findings(taint_flows))
+            raw_findings.extend(
+                self._taint_to_findings(taint_flows, file_path=context.file_path)
+            )
 
         raw_findings = self._deduplicate(raw_findings)
 
         threshold = request.config.severity_threshold
         raw_findings = self._filter_severity(raw_findings, rules, threshold)
 
-        findings = self._enrich_findings(raw_findings, rules, context)
+        ctx_map = {context.file_path: context}
+        findings = self._enrich_findings(raw_findings, rules, ctx_map)
 
         elapsed_ms = int((time.monotonic() - start) * 1000)
         stats = self._compute_stats(
-            findings, context, elapsed_ms, time_budget_exceeded=time_budget_exceeded
+            findings,
+            context,
+            elapsed_ms,
+            time_budget_exceeded=time_budget_exceeded,
         )
 
         return AnalyzeResponse(
@@ -104,7 +111,95 @@ class Orchestrator:
                 failed_rules.append(rule.meta().rule_id)
         return results, failed_rules
 
-    def _taint_to_findings(self, flows: list[TaintFlow]) -> list[RawFinding]:
+    def analyze_bundle_sync(self, request: AnalyzeBundleRequest) -> AnalyzeResponse:
+        start = time.monotonic()
+        scan_id = request.scan_id if request.scan_id is not None else uuid4()
+        budget_ms = self._settings.analysis_budget_ms
+        deadline: float | None = None
+        if budget_ms is not None and budget_ms > 0:
+            deadline = start + budget_ms / 1000.0
+
+        paths = sorted(request.files.keys())
+        contexts: list[AnalysisContext] = []
+        for rel in paths:
+            src = request.files[rel]
+            lang = request.language or detect_language(rel)
+            parser = get_parser(language=lang, file_path=rel)
+            tree = parser.parse(src)
+            contexts.append(
+                AnalysisContext(
+                    source_code=src,
+                    file_path=rel,
+                    tree=tree,
+                    root_node=tree.root_node,
+                    lines=src.splitlines(),
+                    language=lang,
+                )
+            )
+
+        primary_lang = contexts[0].language if contexts else "javascript"
+        rules = get_rules_for_language(primary_lang)
+        if request.config.rule_ids:
+            allowed = set(request.config.rule_ids)
+            rules = [r for r in rules if r.meta().rule_id in allowed]
+
+        merged_idx = merge_fn_index_from_roots([c.root_node for c in contexts])
+        raw_findings: list[RawFinding] = []
+        failed_rules: list[str] = []
+
+        for ctx in contexts:
+            if deadline is not None and time.monotonic() > deadline:
+                break
+            r, f = self._run_rules(rules, ctx, deadline)
+            for rf in r:
+                rf.file_path = ctx.file_path
+            raw_findings.extend(r)
+            failed_rules.extend(f)
+
+        time_budget_exceeded = deadline is not None and time.monotonic() > deadline
+
+        if request.config.enable_taint and not time_budget_exceeded:
+            for ctx in contexts:
+                if deadline is not None and time.monotonic() > deadline:
+                    time_budget_exceeded = True
+                    break
+                flows = self._taint_tracker.analyze(ctx, fn_index=merged_idx)
+                raw_findings.extend(
+                    self._taint_to_findings(flows, file_path=ctx.file_path)
+                )
+
+        raw_findings = self._deduplicate(raw_findings)
+        raw_findings = self._filter_severity(
+            raw_findings, rules, request.config.severity_threshold
+        )
+
+        ctx_map = {c.file_path: c for c in contexts}
+        findings = self._enrich_findings(raw_findings, rules, ctx_map)
+
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        primary_ctx = contexts[0]
+        stats = self._compute_stats(
+            findings,
+            primary_ctx,
+            elapsed_ms,
+            time_budget_exceeded=time_budget_exceeded,
+            files_scanned=len(contexts),
+            lines_scanned=sum(len(c.lines) for c in contexts),
+        )
+
+        return AnalyzeResponse(
+            scan_id=scan_id,
+            status="completed",
+            language=primary_lang,
+            stats=stats,
+            findings=findings,
+            created_at=datetime.now(UTC),
+            failed_rules=list(dict.fromkeys(failed_rules)),
+        )
+
+    def _taint_to_findings(
+        self, flows: list[TaintFlow], *, file_path: str | None = None
+    ) -> list[RawFinding]:
         results: list[RawFinding] = []
         flow_rule_map = {
             "query": "JS-SQL-001",
@@ -129,6 +224,7 @@ class Orchestrator:
                         line_start=flow.sink_line,
                         line_end=flow.sink_line,
                         extra_info=f"taint: {flow.source} → {flow.sink_method}",
+                        file_path=file_path,
                     )
                 )
         return results
@@ -138,7 +234,12 @@ class Orchestrator:
         seen: set[str] = set()
         deduped: list[RawFinding] = []
         for f in findings:
-            key = md5_fingerprint(f.rule_id, str(f.line_start), str(f.column or 0))
+            key = md5_fingerprint(
+                f.rule_id,
+                str(f.line_start),
+                str(f.column or 0),
+                f.file_path or "",
+            )
             if key not in seen:
                 seen.add(key)
                 deduped.append(f)
@@ -166,12 +267,13 @@ class Orchestrator:
         self,
         raw_findings: list[RawFinding],
         rules: Sequence[BaseRule],
-        context: AnalysisContext,
+        contexts: dict[str, AnalysisContext],
     ) -> list[Finding]:
         from analyzer.rules.registry import get_all_rules
 
         rule_map = {r.meta().rule_id: r for r in get_all_rules()}
         enriched: list[Finding] = []
+        default_ctx = next(iter(contexts.values()))
 
         for rf in raw_findings:
             rule = rule_map.get(rf.rule_id)
@@ -191,7 +293,9 @@ class Orchestrator:
                     if cwe_entry.mitigations:
                         remediation = meta.remediation + " | " + cwe_entry.mitigations[0]
 
-            snippet = rf.code_snippet or self._get_snippet(context, rf.line_start)
+            fp = rf.file_path if rf.file_path else default_ctx.file_path
+            ctx = contexts.get(fp) or default_ctx
+            snippet = rf.code_snippet or self._get_snippet(ctx, rf.line_start)
 
             enriched.append(
                 Finding(
@@ -199,7 +303,7 @@ class Orchestrator:
                     title=meta.title,
                     severity=meta.severity,
                     confidence=meta.confidence,
-                    file_path=context.file_path,
+                    file_path=fp,
                     line_start=rf.line_start,
                     line_end=rf.line_end,
                     column=rf.column,
@@ -226,6 +330,8 @@ class Orchestrator:
         elapsed_ms: int,
         *,
         time_budget_exceeded: bool = False,
+        files_scanned: int | None = None,
+        lines_scanned: int | None = None,
     ) -> ScanStats:
         counts: dict[Severity, int] = {s: 0 for s in Severity}
         for f in findings:
@@ -237,8 +343,10 @@ class Orchestrator:
             medium=counts.get(Severity.MEDIUM, 0),
             low=counts.get(Severity.LOW, 0),
             info=counts.get(Severity.INFO, 0),
-            files_scanned=1,
-            lines_scanned=len(ctx.lines),
+            files_scanned=files_scanned if files_scanned is not None else 1,
+            lines_scanned=(
+                lines_scanned if lines_scanned is not None else len(ctx.lines)
+            ),
             scan_duration_ms=elapsed_ms,
             time_budget_exceeded=time_budget_exceeded,
         )

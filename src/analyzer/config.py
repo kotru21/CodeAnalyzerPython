@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     # Wall-clock budget for analyze_sync (rules + optional taint). None = no limit.
     analysis_budget_ms: int | None = None
 
+    max_bundle_files: int = 32
+    max_bundle_total_bytes: int = 524_288
+
     celery_broker_url: str = "redis://localhost:6379/1"
     celery_result_backend: str = "redis://localhost:6379/2"
 

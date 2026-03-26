@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from analyzer.api.dependencies import get_orchestrator, get_redis_client
 from analyzer.api.schemas import (
+    AnalyzeBundleRequest,
     AnalyzeRequest,
     AnalyzeResponse,
     AsyncAnalyzeResponse,
@@ -39,6 +40,43 @@ async def analyze_sync(
             ),
         )
     result = orchestrator.analyze_sync(request)
+    if request.response_format == "sarif":
+        doc = build_sarif_log(
+            result,
+            tool_name=settings.app_name,
+            tool_version=settings.app_version,
+            information_uri=settings.sarif_information_uri,
+        )
+        return JSONResponse(content=doc, media_type="application/sarif+json")
+    return result
+
+
+@router.post("/analyze/bundle/sync", response_model=None)
+async def analyze_bundle_sync(
+    request: AnalyzeBundleRequest,
+    orchestrator: Annotated[Orchestrator, Depends(get_orchestrator)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AnalyzeResponse | JSONResponse:
+    nfiles = len(request.files)
+    if nfiles > settings.max_bundle_files:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Too many files in bundle (max {settings.max_bundle_files}). "
+                "Reduce the number of entries or raise ANALYZER_MAX_BUNDLE_FILES."
+            ),
+        )
+    total_bytes = sum(len(s.encode("utf-8")) for s in request.files.values())
+    if total_bytes > settings.max_bundle_total_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Bundle too large ({total_bytes} bytes). "
+                f"Max: {settings.max_bundle_total_bytes}. "
+                "Raise ANALYZER_MAX_BUNDLE_TOTAL_BYTES if needed."
+            ),
+        )
+    result = orchestrator.analyze_bundle_sync(request)
     if request.response_format == "sarif":
         doc = build_sarif_log(
             result,

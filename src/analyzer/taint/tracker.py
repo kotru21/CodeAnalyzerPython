@@ -8,6 +8,7 @@ from analyzer.taint.sources_sinks import (
     SINK_IDENTIFIERS,
     SINK_MEMBER_PATTERNS,
     SOURCE_PATTERNS,
+    SQL_SINK_METHOD_NAMES,
 )
 
 # Longer patterns first so e.g. req.files wins over req.file as substring
@@ -114,6 +115,13 @@ def _index_functions(root: Node) -> dict[str, tuple[list[str], Node]]:
     return index
 
 
+def merge_fn_index_from_roots(roots: list[Node]) -> dict[str, tuple[list[str], Node]]:
+    merged: dict[str, tuple[list[str], Node]] = {}
+    for root in roots:
+        merged.update(_index_functions(root))
+    return merged
+
+
 def _positional_arguments(args_node: Node | None) -> list[Node]:
     if args_node is None:
         return []
@@ -125,11 +133,15 @@ def _positional_arguments(args_node: Node | None) -> list[Node]:
 class TaintTracker:
     """Taint tracker on tree-sitter AST: intra- and limited same-file inter-procedural."""
 
-    def analyze(self, context: AnalysisContext) -> list[TaintFlow]:
+    def analyze(
+        self,
+        context: AnalysisContext,
+        fn_index: dict[str, tuple[list[str], Node]] | None = None,
+    ) -> list[TaintFlow]:
         tainted_vars: dict[str, str] = {}
         sanitized_vars: set[str] = set()
         flows: list[TaintFlow] = []
-        fn_index = _index_functions(context.root_node)
+        idx = fn_index if fn_index is not None else _index_functions(context.root_node)
 
         self._collect_taint_info(
             context.root_node,
@@ -137,7 +149,7 @@ class TaintTracker:
             sanitized_vars,
             flows,
             context,
-            fn_index,
+            idx,
             0,
         )
         return flows
@@ -153,9 +165,13 @@ class TaintTracker:
         depth: int,
     ) -> None:
         if node.type == "variable_declarator":
-            self._handle_var_decl(node, tainted, sanitized)
+            self._handle_var_decl(
+                node, tainted, sanitized, flows, ctx, fn_index, depth
+            )
         elif node.type == "assignment_expression":
-            self._handle_assignment(node, tainted, sanitized)
+            self._handle_assignment(
+                node, tainted, sanitized, flows, ctx, fn_index, depth
+            )
         elif node.type == "call_expression":
             self._check_sink(node, tainted, sanitized, flows, ctx)
             self._maybe_analyze_callee_interproc(
@@ -208,7 +224,89 @@ class TaintTracker:
             body, merged, san_child, flows, ctx, fn_index, depth + 1
         )
 
-    def _handle_var_decl(self, node: Node, tainted: dict[str, str], sanitized: set[str]) -> None:
+    def _interproc_call_return_source(
+        self,
+        call_node: Node,
+        tainted: dict[str, str],
+        sanitized: set[str],
+        flows: list[TaintFlow],
+        ctx: AnalysisContext,
+        fn_index: dict[str, tuple[list[str], Node]],
+        depth: int,
+    ) -> str | None:
+        if depth >= MAX_INTERPROC_DEPTH:
+            return None
+        func = call_node.child_by_field_name("function")
+        args_node = call_node.child_by_field_name("arguments")
+        if func is None:
+            return None
+        fname = _interproc_callee_name(func)
+        if not fname or fname not in fn_index:
+            return None
+        params, body = fn_index[fname]
+        arg_nodes = _positional_arguments(args_node)
+        bindings: dict[str, str] = {}
+        for i, pname in enumerate(params):
+            if i >= len(arg_nodes):
+                break
+            arg = arg_nodes[i]
+            if self._is_sanitizer_call(arg):
+                continue
+            src = self._find_tainted_in_arg(arg, tainted, sanitized)
+            if src:
+                bindings[pname] = src
+        merged = {**tainted, **bindings}
+        san_child = set(sanitized)
+        self._collect_taint_info(
+            body, merged, san_child, flows, ctx, fn_index, depth + 1
+        )
+        return self._return_expression_taint(body, merged, san_child)
+
+    @staticmethod
+    def _return_expression_taint(
+        body: Node, tainted: dict[str, str], sanitized: set[str]
+    ) -> str | None:
+        def visit(n: Node) -> str | None:
+            if n.type == "return_statement":
+                for ch in n.children:
+                    if not ch.is_named:
+                        continue
+                    r = TaintTracker._extract_source_static(ch, tainted)
+                    if r:
+                        return r
+                    r2 = TaintTracker._find_tainted_in_arg_static(ch, tainted, sanitized)
+                    if r2:
+                        return r2
+            for c in n.children:
+                got = visit(c)
+                if got:
+                    return got
+            return None
+
+        return visit(body)
+
+    @staticmethod
+    def _extract_source_static(node: Node, tainted: dict[str, str]) -> str | None:
+        tr = TaintTracker()
+        return tr._extract_source(node, tainted)
+
+    @staticmethod
+    def _find_tainted_in_arg_static(
+        node: Node, tainted: dict[str, str], sanitized: set[str]
+    ) -> str | None:
+        tr = TaintTracker()
+        return tr._find_tainted_in_arg(node, tainted, sanitized)
+
+    def _handle_var_decl(
+        self,
+        node: Node,
+        tainted: dict[str, str],
+        sanitized: set[str],
+        flows: list[TaintFlow],
+        ctx: AnalysisContext,
+        fn_index: dict[str, tuple[list[str], Node]],
+        depth: int,
+    ) -> None:
         name_node = node.child_by_field_name("name")
         value_node = node.child_by_field_name("value")
         if name_node is None or value_node is None:
@@ -221,11 +319,28 @@ class TaintTracker:
             sanitized.add(var_name)
             return
 
+        if value_node.type == "call_expression":
+            ret = self._interproc_call_return_source(
+                value_node, tainted, sanitized, flows, ctx, fn_index, depth
+            )
+            if ret:
+                tainted[var_name] = ret
+                return
+
         source = self._extract_source(value_node, tainted)
         if source:
             tainted[var_name] = source
 
-    def _handle_assignment(self, node: Node, tainted: dict[str, str], sanitized: set[str]) -> None:
+    def _handle_assignment(
+        self,
+        node: Node,
+        tainted: dict[str, str],
+        sanitized: set[str],
+        flows: list[TaintFlow],
+        ctx: AnalysisContext,
+        fn_index: dict[str, tuple[list[str], Node]],
+        depth: int,
+    ) -> None:
         left = node.child_by_field_name("left")
         right = node.child_by_field_name("right")
         if left is None or right is None:
@@ -237,6 +352,14 @@ class TaintTracker:
         if self._is_sanitizer_call(right):
             sanitized.add(var_name)
             return
+
+        if right.type == "call_expression":
+            ret = self._interproc_call_return_source(
+                right, tainted, sanitized, flows, ctx, fn_index, depth
+            )
+            if ret:
+                tainted[var_name] = ret
+                return
 
         source = self._extract_source(right, tainted)
         if source:
@@ -253,11 +376,29 @@ class TaintTracker:
         if node.type == "identifier" and text in tainted:
             return tainted[text]
 
+        if node.type == "template_substitution":
+            for child in node.children:
+                if not child.is_named:
+                    continue
+                result = self._extract_source(child, tainted)
+                if result:
+                    return result
+            return None
+
         if node.type in ("binary_expression", "template_string"):
             for child in node.children:
                 result = self._extract_source(child, tainted)
                 if result:
                     return result
+
+        if node.type == "object":
+            for child in node.children:
+                if child.type == "spread_element":
+                    for c in child.children:
+                        if c.is_named:
+                            result = self._extract_source(c, tainted)
+                            if result:
+                                return result
 
         if node.type == "member_expression":
             for pattern in _SOURCE_PATTERNS_SORTED:
@@ -350,7 +491,9 @@ class TaintTracker:
         if func_node.type == "member_expression":
             full_text = func_node.text.decode() if func_node.text else ""
             norm = _normalize_optional_access(full_text)
-            return full_text in SINK_MEMBER_PATTERNS or norm in SINK_MEMBER_PATTERNS
+            if full_text in SINK_MEMBER_PATTERNS or norm in SINK_MEMBER_PATTERNS:
+                return True
+            return method in SQL_SINK_METHOD_NAMES
         return False
 
     @staticmethod

@@ -35,6 +35,7 @@ class RawFinding:
     column: int | None = None
     code_snippet: str = ""
     extra_info: str = ""
+    file_path: str | None = None
 
 
 class BaseRule(ABC):

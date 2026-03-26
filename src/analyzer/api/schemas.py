@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from analyzer.core.severity import Confidence, Severity
 
@@ -26,6 +26,30 @@ class AnalyzeRequest(BaseModel):
         description="When set (e.g. async worker), used as report id instead of a new UUID",
     )
     response_format: Literal["json", "sarif"] = "json"
+
+
+class AnalyzeBundleRequest(BaseModel):
+    """Multi-file scan: merged function index for taint; rules run per file."""
+
+    files: dict[str, str] = Field(
+        ...,
+        description="Relative path → source text (UTF-8). Paths should use forward slashes.",
+    )
+    language: str | None = Field(
+        default=None,
+        description="Force language for all files; else inferred from each path",
+    )
+    config: ScanConfig = Field(default_factory=ScanConfig)
+    scan_id: UUID | None = None
+    response_format: Literal["json", "sarif"] = "json"
+
+    @field_validator("files")
+    @classmethod
+    def nonempty_files(cls, v: dict[str, str]) -> dict[str, str]:
+        if not v:
+            msg = "files must contain at least one entry"
+            raise ValueError(msg)
+        return v
 
 
 class FindingLocation(BaseModel):

@@ -3,6 +3,65 @@ from tree_sitter import Node
 from analyzer.core.severity import Confidence, Severity
 from analyzer.rules.base import AnalysisContext, BaseRule, RawFinding, RuleMeta
 
+_UNSAFE_QUERY_SUBSTR = (
+    "req.body",
+    "req.query",
+    "req.params",
+    "request.body",
+    "request.query",
+    "request.params",
+    "ctx.request.body",
+    "ctx.query",
+)
+
+
+def _norm(n: Node) -> str:
+    t = n.text.decode() if n.text else ""
+    return t.replace("?.", ".")
+
+
+def _value_marks_unsafe_spread_or_request(val: Node) -> bool:
+    s = _norm(val)
+    if any(u in s for u in _UNSAFE_QUERY_SUBSTR):
+        return True
+    if val.type == "object":
+        for ch in val.children:
+            if ch.type != "spread_element":
+                continue
+            for c in ch.children:
+                if c.is_named and any(u in _norm(c) for u in _UNSAFE_QUERY_SUBSTR):
+                    return True
+    return False
+
+
+def _binding_before_call_is_unsafe(root: Node, call_node: Node, ident: str) -> bool:
+    call_b = call_node.start_byte
+    best: tuple[int, Node] | None = None
+
+    def visit(n: Node) -> None:
+        nonlocal best
+        if n.type == "variable_declarator":
+            vn = n.child_by_field_name("name")
+            vv = n.child_by_field_name("value")
+            if (
+                vn is not None
+                and vn.type == "identifier"
+                and vv is not None
+                and n.start_byte < call_b
+            ):
+                nm = vn.text.decode() if vn.text else ""
+                if nm == ident:
+                    if best is None or n.start_byte > best[0]:
+                        best = (n.start_byte, vv)
+        for c in n.children:
+            visit(c)
+
+    visit(root)
+    if best is None:
+        return False
+    return _value_marks_unsafe_spread_or_request(best[1])
+
+
 _MONGO_METHODS = frozenset(
     {
         "find",
@@ -81,6 +140,12 @@ class NoSQLInjectionRule(BaseRule):
                         if key_text in _DANGEROUS_OPERATORS:
                             findings.append(self._make_finding(node, ctx))
                             return
+
+        if first_arg.type == "identifier":
+            iname = first_arg.text.decode() if first_arg.text else ""
+            if iname and _binding_before_call_is_unsafe(ctx.root_node, node, iname):
+                findings.append(self._make_finding(node, ctx))
+                return
 
     @staticmethod
     def _get_method_name(func_node: Node) -> str:

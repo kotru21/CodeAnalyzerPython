@@ -28,6 +28,7 @@ pytest tests/ -v
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/v1/analyze/sync` | Synchronous analysis (< 50 KB); JSON or SARIF (see below) |
+| POST | `/api/v1/analyze/bundle/sync` | Multi-file JSON body (`files` map); merged function index for taint; caps via `ANALYZER_MAX_BUNDLE_*` |
 | POST | `/api/v1/analyze/async` | Async analysis via Celery; poll `GET /results/{scan_id}` |
 | GET | `/api/v1/results/{scan_id}` | Async status: `pending`, or completed body (same shape as sync JSON), or `failed` |
 | GET | `/api/v1/rules` | List available rules |
@@ -173,7 +174,7 @@ app.get('/', (req, res) => {
 - **Sources:** Express-style `req.*` (including Multer `req.file` / `req.files`), Koa, Fastify, `process.*`, etc. — see `src/analyzer/taint/sources_sinks.py`.
 - **Sinks:** SQL (`db.query`, Prisma `$queryRaw` / `$executeRaw`, …), `exec`/`eval`, `fs.*`, redirects, etc.
 - **Parameterized SQL:** for calls like `db.query('… $1 …', [values])`, taint only in the values argument is treated as binding, not as SQL text injection (see `tracker.py`).
-- **Same-file inter-procedural:** taint is bound from call arguments into the callee’s parameters when the callee resolves to an indexed function—either a bare identifier (`run(x)`) or a **member call** whose **property name** matches a same-file top-level or `const`/`var` function (`o.run(x)` → `function run` / `const run = …`). Depth is capped at `MAX_INTERPROC_DEPTH` in `tracker.py` (default 5). **Optional chaining** (`req?.body`, `db?.query`) is normalized for source/sink pattern matching. **Not supported:** object-literal method shorthand as callee body unless also declared in the function index, cross-file calls.
+- **Same-file inter-procedural:** taint is bound from call arguments into the callee’s parameters when the callee resolves to an indexed function—either a bare identifier (`run(x)`) or a **member call** whose **property name** matches a same-file top-level or `const`/`var` function (`o.run(x)` → `function run` / `const run = …`). Depth is capped at `MAX_INTERPROC_DEPTH` in `tracker.py` (default 5). **Optional chaining** (`req?.body`, `db?.query`) is normalized for source/sink pattern matching. **Return taint:** `const x = foo()` walks `foo`’s body and uses the first `return` expression to mark `x` tainted when arguments carry taint (same depth cap). **Template literals:** `${...}` inside templates is analyzed via `template_substitution` nodes. **Object spread:** `{ ...req.body }` is treated as tainted when the spread operand matches request-source patterns. **SQL sinks:** any `receiver.query(...)`-style member call whose method name matches a configured SQL sink (e.g. `query`, `$queryRaw`) is treated as a SQL sink, not only `db.query`. **Multi-file (bundle API):** `POST /api/v1/analyze/bundle/sync` merges function indices from all paths then runs taint per file so callees defined in another entry (e.g. `lib/helpers.js`) can be resolved from `app/routes.js`. **Not supported:** object-literal method shorthand as callee body unless also declared in the function index; true `import`/`require` graph (list all defining files in `files` explicitly).
 - **Pattern overlap:** longer `req.*` patterns are preferred (e.g. `req.files` over `req.file`) when both match.
 - **Tests:** `tests/test_taint/test_taint_sources_sinks_matrix.py`, `tests/test_taint/test_taint_interprocedural.py`, `tests/test_taint/test_js_taint.py`.
 
@@ -291,6 +292,8 @@ Environment variables (prefix `ANALYZER_`):
 | `ANALYZER_CELERY_RESULT_BACKEND` | `redis://localhost:6379/2` | Celery result store |
 | `ANALYZER_MAX_SYNC_SOURCE_BYTES` | `50000` | Max size for sync endpoint |
 | `ANALYZER_ANALYSIS_BUDGET_MS` | (unset) | Optional wall-clock limit (ms) for sync analysis: stops before further rules and skips taint if exceeded; `stats.time_budget_exceeded` is set |
+| `ANALYZER_MAX_BUNDLE_FILES` | `32` | Max entries in `analyze/bundle/sync` `files` map |
+| `ANALYZER_MAX_BUNDLE_TOTAL_BYTES` | `524288` | Max total UTF-8 size of all bundle sources |
 | `ANALYZER_DEBUG` | `false` | Debug mode |
 | `ANALYZER_SCAN_TASK_REGISTRY_TTL_SECONDS` | `604800` | Redis TTL for async `scan_id` → task id mapping |
 | `ANALYZER_CORS_ORIGINS` | `[]` | JSON array of allowed browser origins (e.g. `["http://localhost:5173"]`); must not include `*` |

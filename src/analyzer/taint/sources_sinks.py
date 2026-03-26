@@ -99,3 +99,8 @@ SINK_METHODS: frozenset[str] = frozenset(s.pattern.split(".")[-1] for s in ALL_S
 SINK_IDENTIFIERS: frozenset[str] = frozenset(s.pattern for s in ALL_SINKS if "." not in s.pattern)
 
 SINK_MEMBER_PATTERNS: frozenset[str] = frozenset(s.pattern for s in ALL_SINKS if "." in s.pattern)
+
+# Any `receiver.query(...)` / `.$queryRaw` / etc. (covers `dbConn.query` and similar).
+SQL_SINK_METHOD_NAMES: frozenset[str] = frozenset(
+    s.pattern.split(".")[-1] for s in SQL_SINKS if "." in s.pattern
+)
