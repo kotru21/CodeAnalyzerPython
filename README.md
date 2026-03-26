@@ -187,9 +187,37 @@ Single-file HTTP benchmark for precision/recall style scoring (see `docs/superpo
 4. Optional multi-backend compare (Semgrep + HTTP analyzer): `py -3 -m eval.cli compare --base-url http://localhost:8000` (needs Semgrep on PATH and entries in `eval/catalog/rule_map.yaml`, or pass `--semgrep-config <path>`). This writes `eval/results/compare_summary.json`. When both the HTTP analyzer and Semgrep backends run, each non-skipped row can include **`line_overlap`**: greedy line-level pairing between the two tools under the **equivalence mapping** in `rule_map.yaml` (`equivalence_rules` lists which Semgrep `check_id` strings are in scope per analyzer `rule_id`, with optional top-level `line_slop` for near matches). Treat these fields as **mapping-dependent agreement**, not ground-truth security labels. For catalog cases with **`type: safe`**, `line_overlap.analyzer_lines` is always empty by design; non-empty Semgrep lines there are a benchmark signal only, not an automatic false-positive verdict.
 5. **External tree vs Semgrep (optional, large corpora):** `scripts/corpus_paper_eval.py` — Semgrep once + analyzer per file → `corpus_eval_summary.json` with line-level agreement. Use for [semgrep-rules](https://github.com/semgrep/semgrep-rules) trees (e.g. `javascript/`), **NodeGoat**, or a frozen paper snapshot. Needs Semgrep on PATH, API up, and `--semgrep-config`. **Policy A** requires non-empty `equivalence_rules` in `eval/catalog/rule_map.yaml`; **Policy B** is a broad baseline (all checks vs all analyzer findings). Design: `docs/superpowers/specs/2026-03-26-external-js-ts-corpus-semgrep-design.md`. Example: `py -3 scripts/corpus_paper_eval.py --corpus path/to/snapshot --semgrep-config path/to/rules --policy b --analyzer http://localhost:8000`. **File universe (MVP):** extension filter only; record `file_universe_rule` from the JSON in methods. If the same Semgrep `check_id` appears in multiple Policy A buckets, totals can double-count—keep allowlists disjoint for interpretable numbers.
 
+### Reproducing the catalog benchmark
+
+1. Install project test/runtime deps (e.g. `uv sync` or your usual env); install [Semgrep CLI](https://semgrep.dev/docs/getting-started/) and ensure `semgrep` is on `PATH`.
+2. Start the API (step 2 above). Use the same base URL in all commands (e.g. `http://127.0.0.1:8000`).
+3. `py -3 -m eval.build_cases` whenever you change `eval/cases_pack/`.
+4. **Analyzer vs catalog (gold labels):**  
+   `py -3 -m eval.cli run --base-url http://127.0.0.1:8000`  
+   → `eval/results/report.md` and `eval/results/raw/<test_id>.json`.
+5. **Analyzer vs Semgrep (same catalog snippets):** clone rules once, then compare:  
+   `git clone --depth 1 https://github.com/semgrep/semgrep-rules.git .vendor/semgrep-rules`  
+   `py -3 -m eval.cli compare --base-url http://127.0.0.1:8000 --semgrep-config .vendor/semgrep-rules/javascript --output-dir eval/results`  
+   → `eval/results/compare_summary.json` and `eval/results/raw/<test_id>.semgrep.json`.  
+   `eval/catalog/rule_map.yaml` must list Semgrep `check_id` strings under `equivalence_rules` for meaningful `line_overlap` (see step 4 in the list above).
+
+**Pinning (papers / regression reports):** record `semgrep --version`, analyzer/API version (e.g. OpenAPI or release tag), git commit of this repo, commit of `semgrep-rules` (or archive hash), and the exact `eval.cli` / `corpus_paper_eval.py` command line.
+
+### Reading the outputs
+
+| Artifact | What it means |
+|----------|----------------|
+| **`eval/results/report.md`** | Produced by `eval.cli run`. Per-case **TP / TN / FN / FP** vs the **catalog** (`eval/catalog/cases.json`: `type`, `rule_id`, `expected_cwe`, etc.). Summary counts and per-rule stats are in the same report. This is **not** Semgrep agreement. |
+| **`eval/results/raw/<test_id>.json`** | Raw HTTP JSON from `/api/v1/analyze/sync` for that case. |
+| **`eval/results/compare_summary.json`** | From `eval.cli compare`. Each row has catalog `outcome` plus `by_backend` counts. **`line_overlap`** is greedy line pairing between analyzer and Semgrep after filtering Semgrep by `equivalence_rules` in `rule_map.yaml`—**mapping-dependent**, not ground truth. On **`type: safe`** cases, `line_overlap.analyzer_lines` is always empty by design. |
+| **`eval/results/raw/<test_id>.semgrep.json`** | Semgrep JSON for that synthetic file (debugging `check_id` / lines). |
+| **`eval/results/corpus_eval_summary.json`** | From `scripts/corpus_paper_eval.py` on a real tree; fields described in `docs/superpowers/specs/2026-03-26-external-js-ts-corpus-semgrep-design.md` §7. |
+
+`eval/results/*.json` and `report.md` are gitignored; committed sources live under `eval/catalog/` and `eval/cases_pack/`.
+
 ### Semgrep-rules `javascript/` snapshot (reference)
 
-Recorded on one machine for **orientation only**: Semgrep and this service use different rule sets and severities, so totals are **not** precision/recall against a shared ground truth.
+Recorded on one machine for **orientation only**: Semgrep and this service use different rule sets and severities, so totals are **not** precision/recall against a shared ground truth. The **per-file overlap** row below used a coarse **file-level** notion (both tools had ≥1 finding in the same file); for **line-level** agreement and reproducibility metadata use `corpus_paper_eval.py` and the JSON it writes.
 
 | Item | Value |
 |------|--------|
@@ -197,11 +225,9 @@ Recorded on one machine for **orientation only**: Semgrep and this service use d
 | **Files** | 174 (`.js` / `.jsx` / `.ts` / `.tsx` under that tree) |
 | **Semgrep** | CLI **1.156.0**, `--config` = same `javascript/` tree, **897** result rows (matches) |
 | **This analyzer** | API **0.1.0**, **13** rules, taint on, **215** findings summed over the same files (single-file `POST /api/v1/analyze/sync` per file) |
-| **Per-file overlap** | **50** files where both tools had ≥1 finding; **124** Semgrep-only; **0** analyzer-only |
+| **Per-file overlap (coarse)** | **50** files where both tools had ≥1 finding; **124** Semgrep-only; **0** analyzer-only |
 | **HTTP errors** | **0** |
-| **Raw output** | `eval/results/corpus_eval_summary.json` (gitignored; regenerate with `scripts/corpus_paper_eval.py`) |
-
-`eval/results/*.json` and `report.md` are gitignored; committed sources live under `eval/catalog/` and `eval/cases_pack/`.
+| **Raw output (line-level)** | `eval/results/corpus_eval_summary.json` (gitignored; `py -3 scripts/corpus_paper_eval.py …`) |
 
 ## Architecture
 
