@@ -24,7 +24,10 @@
 | `tests/eval/test_corpus_paths.py` | Temp dirs + git fixture for path listing. |
 | `tests/eval/test_corpus_semgrep_normalize.py` | Synthetic Semgrep results + path normalization. |
 | `tests/eval/test_corpus_agreement.py` | End-to-end aggregation on synthetic findings/results (no Semgrep). |
-| `README.md` | New subsection: paper corpus eval, disclaimer, example command. |
+| `tests/eval/test_corpus_repro.py` | SHA-256 and optional mocked Semgrep version. |
+| `README.md` | Paper corpus eval subsection + pointer from `semgrep_corpus_compare.py` (single task owns all README edits). |
+
+**§4 file-universe MVP:** Implement **extension-filtered** `walk` and `git ls-files` only. **Deferred** (document in README + `file_universe_rule` string): honoring `.gitignore` beyond `git ls-files`, max file bytes, and binary detection. The summary must state `file_universe_rule: "walk:rglob_ext=.js,.jsx,.ts,.tsx"` (or `git:ls-files+ext filter`) so the paper matches what was run.
 
 ---
 
@@ -152,11 +155,11 @@ git commit -m "feat(eval): deterministic JS/TS corpus path listing"
 
 Assert that for `corpus_root = /tmp/corpus` and Semgrep result `path` equal to `str(/tmp/corpus/sub/x.js)`, `relpath` resolves to `sub/x.js` and lines with allowed `check_id` are collected.
 
-Include a test where `allowed_check_ids` is empty → no lines.
+Include tests: `allowed_check_ids=frozenset()` → no lines; `allowed_check_ids=None` → all matching paths’ lines.
 
 - [ ] **Step 2: Run pytest → FAIL**
 
-- [ ] **Step 3: Implement** `semgrep_result_relpath(corpus_root: Path, result_path: str | None) -> str | None` and `integer_lines_from_semgrep_for_relpath(results: list[dict], corpus_root: Path, target_relpath: str, allowed_check_ids: frozenset[str]) -> list[int]` using the same line extraction logic as `integer_lines_from_semgrep_results` in `line_overlap.py` but match **path** by normalizing both sides to `Path(...).resolve().relative_to(corpus_root.resolve()).as_posix()` when possible; if path is not under corpus, skip.
+- [ ] **Step 3: Implement** `semgrep_result_relpath(corpus_root: Path, result_path: str | None) -> str | None` and `integer_lines_from_semgrep_for_relpath(..., target_relpath: str, allowed_check_ids: frozenset[str] | None) -> list[int]`: when `allowed_check_ids is None`, include **all** `check_id` values (Policy B); when `frozenset()`, include none. Path matching: normalize to `relative_to(corpus_root.resolve()).as_posix()` when under corpus; otherwise skip.
 
 - [ ] **Step 4: pytest PASS**
 
@@ -181,16 +184,16 @@ Include a test where `allowed_check_ids` is empty → no lines.
 - [ ] **Step 2: Implement**
 
   - `def buckets_for_policy(policy: Literal["a","b"], rule_map: RuleMap) -> list[str]:`  
-    - `a`: sorted keys of `rule_map.equivalence_rules` that have non-empty check-id lists.  
-    - `b`: `["ALL_MAPPED"]` sentinel.
+    - `a`: sorted keys of `rule_map.equivalence_rules` with non-empty check-id lists.  
+    - `b`: `["ALL_MAPPED"]` only.
 
-  - `def allowed_check_ids_for_bucket(bucket: str, rule_map: RuleMap, policy: str) -> frozenset[str]:`  
-    - `a`: `frozenset(rule_map.equivalence_rules[bucket])`.  
-    - `b`: `frozenset().union(*rule_map.equivalence_rules.values())` **or** if union empty, treat as “no filter” by using all check_ids appearing in provided `semgrep_results` for that file (document in code comment—spec Policy B allows broad baseline; MVP: union of all mapped check_ids, and if empty raise `ValueError` telling user to use Policy A or populate `equivalence_rules`).
+  - **Policy a:** For bucket `rid`, Semgrep lines = `integer_lines_from_semgrep_for_relpath(..., allowed_check_ids=frozenset(rule_map.equivalence_rules[rid]))`; analyzer lines = `integer_lines_from_analyzer_findings(..., allowed_rule_ids=frozenset({rid}))`.
 
-  - `def overlap_for_file_bucket(..., analyzer_findings: list[dict], semgrep_results: list[dict], ...) -> dict:` call `integer_lines_from_analyzer_findings` with `allowed_rule_ids=frozenset({bucket})` for policy `a`; for policy `b` use all findings (`allowed_rule_ids` = set of all rule_ids present in findings or use a dedicated loop without filter per spec §5.1).
+  - **Policy b:** Semgrep lines = `integer_lines_from_semgrep_for_relpath(..., allowed_check_ids=None)`; analyzer lines = all findings with valid lines (`allowed_rule_ids` = frozenset of every `rule_id` seen in that file’s findings, or extract lines without filtering by rule—same effect). Summary JSON includes `policy_b_note` string as in Task 5. **No** requirement that `equivalence_rules` be non-empty for Policy B.
 
-  - `def aggregate_overlap_payloads(payloads: list[dict]) -> dict[str, int]:` return keys `matched_line_pairs`, `analyzer_only_lines`, `semgrep_only_lines` as **global counts** (sum of list lengths).
+  - `def overlap_for_file_bucket(...) -> dict:` build `build_line_overlap_payload(line_slop=..., analyzer_lines=..., semgrep_lines_in_map=...)`.
+
+  - `def aggregate_overlap_payloads(payloads: list[dict]) -> dict[str, int]:` keys `matched_line_pairs`, `analyzer_only_lines`, `semgrep_only_lines` = **global** sums of list lengths.
 
 - [ ] **Step 3: pytest PASS**
 
@@ -202,21 +205,25 @@ Include a test where `allowed_check_ids` is empty → no lines.
 
 **Files:**
 - Create: `eval/corpus_repro.py`
-- Test: `tests/eval/test_corpus_repro.py` (mock file hashes with tmp files; mock `subprocess` for semgrep version optional or use `monkeypatch`)
+- Test: `tests/eval/test_corpus_repro.py`
 
-- [ ] **Step 1: Implement** `sha256_file(path: Path) -> str`, `config_bundle_hashes(paths: list[Path]) -> dict[str, str]` mapping basename → sha256, `semgrep_cli_version() -> str` via `subprocess.run([semgrep_executable(), "--version"], ...)` capturing stdout first line.
+- [ ] **Step 1: Write failing tests** — assert `sha256_file` on a temp file with known bytes matches a precomputed SHA-256; use `monkeypatch` to stub `subprocess.run` for `semgrep_cli_version()` returning a fixed stdout line.
 
-- [ ] **Step 2: Tests** for SHA256 of known bytes.
+- [ ] **Step 2: Run pytest → FAIL**
 
-- [ ] **Step 3: Commit** `feat(eval): reproducibility metadata for corpus eval`
+- [ ] **Step 3: Implement** `sha256_file(path: Path) -> str`, `config_bundle_hashes(paths: list[Path]) -> dict[str, str]` (basename → sha256), `semgrep_cli_version() -> str` via `subprocess.run([semgrep_executable(), "--version"], ...)` first line of stdout.
+
+- [ ] **Step 4: pytest PASS**
+
+- [ ] **Step 5: Commit** `feat(eval): reproducibility metadata for corpus eval`
 
 ---
 
-### Task 5: CLI script `scripts/corpus_paper_eval.py`
+### Task 5: CLI script `scripts/corpus_paper_eval.py` + README
 
 **Files:**
 - Create: `scripts/corpus_paper_eval.py`
-- Modify: `README.md` (eval / benchmark section)
+- Modify: `README.md` (eval / benchmark section); `scripts/semgrep_corpus_compare.py` docstring (one-line pointer)
 
 - [ ] **Step 1: argparse**
 
@@ -229,9 +236,10 @@ Include a test where `allowed_check_ids` is empty → no lines.
   - `--out` default `eval/results/corpus_eval_summary.json`
   - `--corpus-id` optional string (default: corpus dir name or full path string)
   - `--corpus-snapshot-hash` optional (default: empty; user passes git commit for paper)
-  - `--analyzer-invoke` optional string recorded verbatim in JSON
+  - `--analyzer-invoke` optional string recorded verbatim in JSON (e.g. `POST .../analyze/sync`)
+  - `--analyzer-git-commit` optional string (or `--analyzer-version` optional string): at least **one** should be documented for §7; if both omitted, emit `analyzer_version: null` and `analyzer_git_commit: null` plus `analyzer_identity_note: "not provided; pass --analyzer-git-commit for paper"`
   - `--environment-note` optional string
-  - `--environment-out-of-scope` store_true → emit `environment_out_of_scope: true` when note omitted
+  - `--environment-out-of-scope` `store_true`: if set, JSON **must** include `"environment_out_of_scope": true` and **must not** require `environment_note`. If **not** set and `--environment-note` is absent, emit `"environment_out_of_scope": true` and `"environment_note": null` (explicit §7-valid default: environment not pinned). If `--environment-note` is set, emit `environment_note` and `environment_out_of_scope: false`.
   - `--max-files` int default 0 (unlimited)
 
 - [ ] **Step 2: Orchestration**
@@ -246,33 +254,28 @@ Include a test where `allowed_check_ids` is empty → no lines.
 
   Clarification for MVP output shape: include `aggregate` global counts plus `by_bucket: { bucket: { matched_line_pairs, ... } }` without per-file matrix to keep file size sane for large corpora; add `--per-file` flag later if needed (out of scope for first PR).
 
-- [ ] **Step 3: Write summary JSON** matching spec §7 field names where possible (`semgrep_cli_argv` as list of strings built from config paths, `semgrep_config_paths`, `semgrep_config_sha256` dict, `file_universe_rule` string describing mode + extensions, `files_with_js_ts`, totals).
+- [ ] **Step 3: Write summary JSON (§7 checklist)** — required keys:
 
-- [ ] **Step 4: Manual smoke** (developer machine): `py -3 scripts/corpus_paper_eval.py --corpus ... --semgrep-config ... --max-files 3` with analyzer up.
+  - `files_scanned` = number of files successfully submitted to analyzer (or listed, if analyzer errors counted separately—**define:** `files_scanned` = len(path list after `--max-files`); `files_with_js_ts` = same as `files_scanned` for this MVP since list is JS/TS-only).
+  - `analyzer_findings_total` = sum of finding counts **after** bucket policy (sum over files of counts included in overlap inputs—document: for Policy A, sum per-file findings whose `rule_id` is in any bucket; for Policy B, sum all findings).
+  - `semgrep_findings_total` = count of Semgrep `results` entries **after** path normalization and policy (Policy A: only results whose `check_id` is allowed for at least one bucket when attributing—**MVP:** count all results under corpus with `check_id` matching any bucket’s allowlist for policy `a`; for policy `b`, count all results for listed files).
+  - `matched_line_pairs`, `analyzer_only_lines`, `semgrep_only_lines` = **global** sums from `aggregate_overlap_payloads`.
+  - Plus: `corpus_id`, `corpus_snapshot_hash`, `file_universe_rule`, `analyzer_invoke`, `analyzer_version` / `analyzer_git_commit` (nullable + note), `semgrep_version`, `semgrep_config_paths`, `semgrep_config_sha256`, `semgrep_cli_argv`, `environment_note`, `environment_out_of_scope`.
 
-- [ ] **Step 5: Commit** `feat(scripts): corpus_paper_eval for Semgrep agreement summary`
+- [ ] **Step 4: Gate on pytest only** — optional manual smoke on dev machine is **non-gating**; mark Task 5 done when unit tests pass.
 
----
+- [ ] **Step 5: README** — add bullet for `corpus_paper_eval.py` (spec link, disclaimer, §4 MVP limitation on file universe, example command); add one-line pointer in `semgrep_corpus_compare.py` docstring.
 
-### Task 6: README and deprecation note
-
-**Files:**
-- Modify: `README.md`
-
-- [ ] **Step 1:** Add bullet **7** (or renumber): `corpus_paper_eval.py` for external frozen JS/TS trees, link to spec, disclaimer (mapping-dependent, Semgrep not ground truth), example command.
-
-- [ ] **Step 2:** In `scripts/semgrep_corpus_compare.py` docstring, add one line: *For line-level agreement and reproducibility metadata prefer `scripts/corpus_paper_eval.py`.*
-
-- [ ] **Step 3: Commit** `docs: document corpus paper eval CLI`
+- [ ] **Step 6: Commit** `feat(scripts): corpus_paper_eval for Semgrep agreement summary`
 
 ---
 
-### Task 7: Optional integration hook (skipped in CI by default)
+### Task 6: Optional integration hook (skipped in CI by default)
 
 **Files:**
-- Create: `tests/eval/test_corpus_paper_eval_integration.py` with `@pytest.mark.skipif(not os.environ.get("SEMGREP_INTEGRATION"), reason="...")` empty or minimal—optional.
+- Optional: `tests/eval/test_corpus_paper_eval_integration.py` with `@pytest.mark.skipif(not os.environ.get("SEMGREP_INTEGRATION"), reason="...")`.
 
-- [ ] **Step 1:** Skip unless env set; if set, run script subprocess on tiny fixture under `tests/fixtures/corpus_tiny/` (2 files)—only if maintainers want; **YAGNI default: omit integration test**, only document env var in README. Mark this task optional and skip in MVP.
+- [ ] **Step 1:** **YAGNI default: omit.** Document `SEMGREP_INTEGRATION` in README only if an integration test is added later.
 
 ---
 
