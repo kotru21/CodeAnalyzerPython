@@ -15,6 +15,25 @@ _SOURCE_PATTERNS_SORTED: tuple[str, ...] = tuple(sorted(SOURCE_PATTERNS, key=len
 
 MAX_INTERPROC_DEPTH = 5
 
+
+def _normalize_optional_access(text: str) -> str:
+    """Map `a?.b` to `a.b` so SOURCE/SINK substring checks match optional chaining."""
+    return text.replace("?.", ".")
+
+
+def _interproc_callee_name(func: Node) -> str | None:
+    if func.type == "identifier":
+        t = func.text.decode() if func.text else ""
+        return t or None
+    if func.type == "member_expression":
+        prop = func.child_by_field_name("property")
+        if prop is None:
+            return None
+        t = prop.text.decode() if prop.text else ""
+        return t or None
+    return None
+
+
 # db.query('... $1 ...', values): taint only in values is binding, not SQLi text.
 _SQL_PLACEHOLDER_MULTIARG_METHODS: frozenset[str] = frozenset({"query"})
 
@@ -162,9 +181,9 @@ class TaintTracker:
             return
         func = node.child_by_field_name("function")
         args_node = node.child_by_field_name("arguments")
-        if func is None or func.type != "identifier":
+        if func is None:
             return
-        fname = func.text.decode() if func.text else ""
+        fname = _interproc_callee_name(func)
         if not fname or fname not in fn_index:
             return
         params, body = fn_index[fname]
@@ -225,9 +244,10 @@ class TaintTracker:
 
     def _extract_source(self, node: Node, tainted: dict[str, str]) -> str | None:
         text = node.text.decode() if node.text else ""
+        norm = _normalize_optional_access(text)
 
         for pattern in _SOURCE_PATTERNS_SORTED:
-            if pattern in text:
+            if pattern in norm:
                 return pattern
 
         if node.type == "identifier" and text in tainted:
@@ -240,9 +260,8 @@ class TaintTracker:
                     return result
 
         if node.type == "member_expression":
-            obj_text = text
             for pattern in _SOURCE_PATTERNS_SORTED:
-                if obj_text.startswith(pattern):
+                if norm.startswith(pattern):
                     return pattern
 
         return None
@@ -305,6 +324,7 @@ class TaintTracker:
         self, node: Node, tainted: dict[str, str], sanitized: set[str]
     ) -> str | None:
         text = node.text.decode() if node.text else ""
+        norm = _normalize_optional_access(text)
 
         if node.type == "identifier":
             if text in sanitized:
@@ -313,7 +333,7 @@ class TaintTracker:
                 return tainted[text]
 
         for pattern in _SOURCE_PATTERNS_SORTED:
-            if pattern in text:
+            if pattern in norm:
                 return pattern
 
         for child in node.children:
@@ -329,7 +349,8 @@ class TaintTracker:
             return method in SINK_IDENTIFIERS
         if func_node.type == "member_expression":
             full_text = func_node.text.decode() if func_node.text else ""
-            return full_text in SINK_MEMBER_PATTERNS
+            norm = _normalize_optional_access(full_text)
+            return full_text in SINK_MEMBER_PATTERNS or norm in SINK_MEMBER_PATTERNS
         return False
 
     @staticmethod

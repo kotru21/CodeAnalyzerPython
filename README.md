@@ -173,7 +173,7 @@ app.get('/', (req, res) => {
 - **Sources:** Express-style `req.*` (including Multer `req.file` / `req.files`), Koa, Fastify, `process.*`, etc. — see `src/analyzer/taint/sources_sinks.py`.
 - **Sinks:** SQL (`db.query`, Prisma `$queryRaw` / `$executeRaw`, …), `exec`/`eval`, `fs.*`, redirects, etc.
 - **Parameterized SQL:** for calls like `db.query('… $1 …', [values])`, taint only in the values argument is treated as binding, not as SQL text injection (see `tracker.py`).
-- **Same-file inter-procedural:** if the callee is a bare identifier (`run(x)`), the analyzer binds taint from actual arguments into the callee’s parameters and re-walks that function body (depth capped at `MAX_INTERPROC_DEPTH` in `tracker.py`, default 5). **Not supported:** `obj.method()`, optional chaining, cross-file calls.
+- **Same-file inter-procedural:** taint is bound from call arguments into the callee’s parameters when the callee resolves to an indexed function—either a bare identifier (`run(x)`) or a **member call** whose **property name** matches a same-file top-level or `const`/`var` function (`o.run(x)` → `function run` / `const run = …`). Depth is capped at `MAX_INTERPROC_DEPTH` in `tracker.py` (default 5). **Optional chaining** (`req?.body`, `db?.query`) is normalized for source/sink pattern matching. **Not supported:** object-literal method shorthand as callee body unless also declared in the function index, cross-file calls.
 - **Pattern overlap:** longer `req.*` patterns are preferred (e.g. `req.files` over `req.file`) when both match.
 - **Tests:** `tests/test_taint/test_taint_sources_sinks_matrix.py`, `tests/test_taint/test_taint_interprocedural.py`, `tests/test_taint/test_js_taint.py`.
 
@@ -290,6 +290,7 @@ Environment variables (prefix `ANALYZER_`):
 | `ANALYZER_CELERY_BROKER_URL` | `redis://localhost:6379/1` | Celery broker |
 | `ANALYZER_CELERY_RESULT_BACKEND` | `redis://localhost:6379/2` | Celery result store |
 | `ANALYZER_MAX_SYNC_SOURCE_BYTES` | `50000` | Max size for sync endpoint |
+| `ANALYZER_ANALYSIS_BUDGET_MS` | (unset) | Optional wall-clock limit (ms) for sync analysis: stops before further rules and skips taint if exceeded; `stats.time_budget_exceeded` is set |
 | `ANALYZER_DEBUG` | `false` | Debug mode |
 | `ANALYZER_SCAN_TASK_REGISTRY_TTL_SECONDS` | `604800` | Redis TTL for async `scan_id` → task id mapping |
 | `ANALYZER_CORS_ORIGINS` | `[]` | JSON array of allowed browser origins (e.g. `["http://localhost:5173"]`); must not include `*` |

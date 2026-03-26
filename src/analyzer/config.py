@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     max_sync_source_bytes: int = 50_000
     max_source_bytes: int = 5_000_000
 
+    # Wall-clock budget for analyze_sync (rules + optional taint). None = no limit.
+    analysis_budget_ms: int | None = None
+
     celery_broker_url: str = "redis://localhost:6379/1"
     celery_result_backend: str = "redis://localhost:6379/2"
 

@@ -32,6 +32,10 @@ class Orchestrator:
     def analyze_sync(self, request: AnalyzeRequest) -> AnalyzeResponse:
         start = time.monotonic()
         scan_id = request.scan_id if request.scan_id is not None else uuid4()
+        budget_ms = self._settings.analysis_budget_ms
+        deadline: float | None = None
+        if budget_ms is not None and budget_ms > 0:
+            deadline = start + budget_ms / 1000.0
 
         language = request.language or detect_language(request.file_path)
         parser = get_parser(language=language, file_path=request.file_path)
@@ -51,9 +55,10 @@ class Orchestrator:
             allowed = set(request.config.rule_ids)
             rules = [r for r in rules if r.meta().rule_id in allowed]
 
-        raw_findings, failed_rules = self._run_rules(rules, context)
+        raw_findings, failed_rules = self._run_rules(rules, context, deadline)
+        time_budget_exceeded = deadline is not None and time.monotonic() > deadline
 
-        if request.config.enable_taint:
+        if request.config.enable_taint and not time_budget_exceeded:
             taint_flows = self._taint_tracker.analyze(context)
             raw_findings.extend(self._taint_to_findings(taint_flows))
 
@@ -65,7 +70,9 @@ class Orchestrator:
         findings = self._enrich_findings(raw_findings, rules, context)
 
         elapsed_ms = int((time.monotonic() - start) * 1000)
-        stats = self._compute_stats(findings, context, elapsed_ms)
+        stats = self._compute_stats(
+            findings, context, elapsed_ms, time_budget_exceeded=time_budget_exceeded
+        )
 
         return AnalyzeResponse(
             scan_id=scan_id,
@@ -78,11 +85,16 @@ class Orchestrator:
         )
 
     def _run_rules(
-        self, rules: Sequence[BaseRule], context: AnalysisContext
+        self,
+        rules: Sequence[BaseRule],
+        context: AnalysisContext,
+        deadline: float | None,
     ) -> tuple[list[RawFinding], list[str]]:
         results: list[RawFinding] = []
         failed_rules: list[str] = []
         for rule in rules:
+            if deadline is not None and time.monotonic() > deadline:
+                break
             if rule.should_skip(context):
                 continue
             try:
@@ -208,7 +220,13 @@ class Orchestrator:
         return ""
 
     @staticmethod
-    def _compute_stats(findings: list[Finding], ctx: AnalysisContext, elapsed_ms: int) -> ScanStats:
+    def _compute_stats(
+        findings: list[Finding],
+        ctx: AnalysisContext,
+        elapsed_ms: int,
+        *,
+        time_budget_exceeded: bool = False,
+    ) -> ScanStats:
         counts: dict[Severity, int] = {s: 0 for s in Severity}
         for f in findings:
             counts[f.severity] = counts.get(f.severity, 0) + 1
@@ -222,4 +240,5 @@ class Orchestrator:
             files_scanned=1,
             lines_scanned=len(ctx.lines),
             scan_duration_ms=elapsed_ms,
+            time_budget_exceeded=time_budget_exceeded,
         )

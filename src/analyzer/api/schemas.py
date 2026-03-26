@@ -61,6 +61,7 @@ class ScanStats(BaseModel):
     files_scanned: int = 0
     lines_scanned: int = 0
     scan_duration_ms: int = 0
+    time_budget_exceeded: bool = False
 
 
 class AnalyzeResponse(BaseModel):
