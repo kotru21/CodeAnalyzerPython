@@ -66,6 +66,14 @@ def test_analyzer_drops_non_int_line() -> None:
     assert got == [3]
 
 
+def test_analyzer_accepts_line_start_when_line_absent() -> None:
+    findings = [{"rule_id": "R1", "line_start": 6}]
+    got = integer_lines_from_analyzer_findings(
+        findings, allowed_rule_ids=frozenset({"R1"})
+    )
+    assert got == [6]
+
+
 def test_semgrep_filters_check_id_and_stem() -> None:
     tid = "CASE-01"
     allow = frozenset({"rule.x"})

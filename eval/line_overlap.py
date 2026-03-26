@@ -18,6 +18,9 @@ def integer_lines_from_analyzer_findings(
             continue
         line = f.get("line")
         if not isinstance(line, int):
+            ls = f.get("line_start")
+            line = ls if isinstance(ls, int) else None
+        if not isinstance(line, int):
             continue
         lines.add(line)
     return sorted(lines)

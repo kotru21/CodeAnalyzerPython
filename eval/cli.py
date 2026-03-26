@@ -13,6 +13,7 @@ from eval.backends.http_analyzer import HttpAnalyzerBackend
 from eval.backends.semgrep_case import SemgrepCaseBackend
 from eval.catalog_loader import load_cases, repo_root
 from eval.catalog_runner import run_catalog
+from eval.compare_enrich import enrich_rows_with_line_overlap
 from eval.rule_map import collect_semgrep_configs_for_cases, load_rule_map
 
 if TYPE_CHECKING:
@@ -61,6 +62,8 @@ def execute_compare(args: Namespace) -> int:
     raw_dir.mkdir(parents=True, exist_ok=True)
 
     cases = load_cases(catalog_path)
+    if getattr(args, "limit", 0) and args.limit > 0:
+        cases = cases[: args.limit]
     names = _parse_backends(args.backends)
     if not names:
         print("No backends given.", file=sys.stderr)
@@ -97,6 +100,17 @@ def execute_compare(args: Namespace) -> int:
             write_report=False,
             out_dir=out_dir,
             catalog_dir=catalog_path.parent,
+        )
+
+    backend_names = [b.name for b in backends]
+    if "analyzer_http" in backend_names and "semgrep" in backend_names:
+        rule_map_overlap = load_rule_map(root / args.rule_map)
+        enrich_rows_with_line_overlap(
+            rows,
+            cases,
+            rule_map_overlap,
+            raw_dir,
+            backends_have_semgrep_and_http=True,
         )
 
     summary = {
@@ -138,6 +152,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--semgrep-config",
         default="",
         help="Single Semgrep --config path (repo-relative); overrides rule map union",
+    )
+    cmp_p.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Only first N catalog cases (0 = all)",
     )
 
     args = parser.parse_args(argv)
