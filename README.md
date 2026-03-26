@@ -230,20 +230,20 @@ The repo often uses a clone of **[semgrep-rules](https://github.com/semgrep/semg
 
 ### Current catalog compare vs Semgrep
 
-Numbers below are from **`eval.cli compare`** on the **internal catalog** above (**`eval/catalog/cases.json`**, 87 non-`SKIP` cases), Semgrep **`--config .vendor/semgrep-rules/javascript`**, and **`eval/catalog/rule_map.yaml`** `equivalence_rules` as committed. Recorded **2026-03-26**. Re-run the compare command in [Reproducing the catalog benchmark](#reproducing-the-catalog-benchmark) to refresh; **`compare_summary.json` is not in git**.
+Numbers below are from **`eval.cli compare`** on the **internal catalog** above (**`eval/catalog/cases.json`**, 87 non-`SKIP` cases), Semgrep **`--config .vendor/semgrep-rules/javascript`**, and **`eval/catalog/rule_map.yaml`** `equivalence_rules` as committed. Recorded **2026-03-26** (refreshed against **`uvicorn analyzer.main:app` on `http://127.0.0.1:8001`** from git **`b59ef6c`**; Semgrep **1.156.0**; semgrep-rules **`28db38e`**). Re-run the compare command in [Reproducing the catalog benchmark](#reproducing-the-catalog-benchmark) to refresh; **`compare_summary.json` is not in git**. A Docker API on **:8000** without **`docker compose build`** may still reflect an older image and lower **TP** / higher **FN**.
 
 | Metric | Value |
 |--------|------:|
-| Gold outcomes (catalog labels, same rows) | **TP** 41, **TN** 34, **FN** 6, **FP** 6 |
-| Sum of per-case `finding_count` (HTTP analyzer) | 64 |
+| Gold outcomes (catalog labels, same rows) | **TP** 45, **TN** 33, **FN** 2, **FP** 7 |
+| Sum of per-case `finding_count` (HTTP analyzer) | 76 |
 | Sum of per-case `finding_count` (Semgrep) | 27 |
 | Cases with any in-map Semgrep line (`semgrep_lines_in_map` non-empty) | 22 |
 | Cases with ≥1 **`line_overlap.matched_lines`** pair | 15 |
 | Total matched line pairs (sum of `len(matched_lines)`) | 16 |
-| Total analyzer-only lines (sum of `analyzer_only_lines`) | 27 |
+| Total analyzer-only lines (sum of `analyzer_only_lines`) | 31 |
 | Total Semgrep-only lines (sum of `semgrep_only_lines`) | 7 |
 
-Gold **TP/TN/FN/FP** are vs the catalog, not vs Semgrep. **`line_overlap`** is greedy pairing under `equivalence_rules` only (mapping-dependent agreement).
+Gold **TP/TN/FN/FP** are vs the catalog, not vs Semgrep. **`line_overlap`** is greedy pairing under `equivalence_rules` only (mapping-dependent agreement). Remaining catalog **FN** (2): **`NOSQL-HARD-VULN-01`**, **`SSRF-HARD-VULN-01`**.
 
 ### Current `corpus_paper_eval` run (example: `semgrep-rules` `javascript/`)
 
@@ -254,12 +254,12 @@ Example **external-tree** run: **Policy B** (all analyzer findings vs all in-sco
 | **Corpus** | `.vendor/semgrep-rules/javascript` (174 `.js`/`.jsx`/`.ts`/`.tsx` files, `walk:rglob_ext=…`) |
 | **Rules commit** | `28db38e6376df4995dac96f41984cc5690549553` |
 | **Semgrep** | CLI **1.156.0**, `--config` = same `javascript/` tree |
-| **Command** | `py -3 scripts/corpus_paper_eval.py --corpus .vendor/semgrep-rules/javascript --semgrep-config .vendor/semgrep-rules/javascript --policy b --analyzer http://127.0.0.1:8000` (plus `--out` / `--corpus-id` as you prefer) |
+| **Command** | `py -3 scripts/corpus_paper_eval.py --corpus .vendor/semgrep-rules/javascript --semgrep-config .vendor/semgrep-rules/javascript --policy b --analyzer http://127.0.0.1:8001` (plus `--out` / `--corpus-id` as you prefer; URL must match your running API) |
 | **`semgrep_findings_total`** (counted rows with string `check_id` + line) | **868** |
-| **`analyzer_findings_total`** | **215** |
-| **`matched_line_pairs`** | **115** |
-| **`analyzer_only_lines`** | **75** |
-| **`semgrep_only_lines`** | **614** |
+| **`analyzer_findings_total`** | **219** |
+| **`matched_line_pairs`** | **116** |
+| **`analyzer_only_lines`** | **76** |
+| **`semgrep_only_lines`** | **613** |
 
 These numbers are **Semgrep agreement under Policy B**, not precision/recall vs a labeled dataset. Older ad-hoc **per-file** “both tools ≥1 hit” stats are deprecated in favor of the line-level JSON above.
 
