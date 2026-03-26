@@ -188,6 +188,7 @@ Single-file HTTP benchmark for precision/recall style scoring (see `docs/superpo
 5. SARIF smoke: `py -3 -m eval.sarif_smoke --base-url http://localhost:8000`
 6. Async vs sync comparison: `py -3 -m eval.async_compare --base-url http://localhost:8000`
 7. **Semgrep cross-check (optional):** clone [semgrep-rules](https://github.com/semgrep/semgrep-rules), install the [Semgrep CLI](https://semgrep.dev/docs/getting-started/), then run `scripts/semgrep_corpus_compare.py` (see module docstring). Point `--corpus` at e.g. `semgrep-rules/javascript`; for **NodeGoat**, use the same script with `--corpus` set to the cloned app source and a JS rule pack as `--semgrep-config`.
+8. **External corpus (paper / thesis):** `scripts/corpus_paper_eval.py` runs Semgrep once and the HTTP analyzer per file, then writes `corpus_eval_summary.json` with **line-level agreement** (greedy pairing, `line_slop` / `equivalence_rules` from `eval/catalog/rule_map.yaml`). Design: `docs/superpowers/specs/2026-03-26-external-js-ts-corpus-semgrep-design.md`. **Policy A** needs non-empty `equivalence_rules`; **Policy B** compares all Semgrep hits under your configs vs all analyzer findings (broad baseline). Metrics are **mapping-dependent**; Semgrep is not ground truth. **File universe (MVP):** extension filter only (`walk` or `git ls-files`); no max-size/binary skip yet—record `file_universe_rule` from the JSON in your methods section.
 
 ### Semgrep-rules `javascript/` snapshot (reference)
 

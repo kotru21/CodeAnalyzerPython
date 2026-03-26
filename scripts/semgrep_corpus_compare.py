@@ -2,6 +2,8 @@
 """
 Compare Semgrep vs this analyzer on the same local file tree (e.g. semgrep-rules).
 
+For **line-level overlap**, reproducibility fields, and paper-oriented summaries, prefer ``scripts/corpus_paper_eval.py``.
+
 Setup
 -----
 1. Clone rules (one-time), e.g. next to the repo::
@@ -37,7 +39,11 @@ import json
 import sys
 from pathlib import Path
 
-from eval.backends.semgrep_subprocess import run_semgrep_json
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from eval.backends.semgrep_subprocess import run_semgrep_json  # noqa: E402
 
 
 def _collect_sources(root: Path, extensions: frozenset[str]) -> list[Path]:
