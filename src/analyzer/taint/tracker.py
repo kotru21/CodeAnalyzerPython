@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from tree_sitter import Node
 
 from analyzer.rules.base import AnalysisContext
-from analyzer.taint.sanitizers import SANITIZER_NAMES
+from analyzer.taint.sanitizers import SANITIZER_NAMES, is_parameterized_query
 from analyzer.taint.sources_sinks import (
     SINK_IDENTIFIERS,
     SINK_MEMBER_PATTERNS,
@@ -14,6 +14,16 @@ from analyzer.taint.sources_sinks import (
 _SOURCE_PATTERNS_SORTED: tuple[str, ...] = tuple(sorted(SOURCE_PATTERNS, key=len, reverse=True))
 
 MAX_INTERPROC_DEPTH = 5
+
+# db.query('... $1 ...', values): taint only in values is binding, not SQLi text.
+_SQL_PLACEHOLDER_MULTIARG_METHODS: frozenset[str] = frozenset({"query"})
+
+
+def _string_literal_text(node: Node) -> str | None:
+    """Raw source slice for a string literal (includes quotes); None if not a string node."""
+    if node.type != "string":
+        return None
+    return node.text.decode() if node.text else None
 
 
 @dataclass
@@ -254,7 +264,30 @@ class TaintTracker:
         if not self._is_known_sink(func, method):
             return
 
-        for arg in _positional_arguments(args):
+        pos_args = _positional_arguments(args)
+        if (
+            len(pos_args) >= 2
+            and method in _SQL_PLACEHOLDER_MULTIARG_METHODS
+        ):
+            first = pos_args[0]
+            lit = _string_literal_text(first)
+            if lit is not None and is_parameterized_query(lit):
+                taint_in_first = self._find_tainted_in_arg(
+                    first, tainted, sanitized
+                )
+                if taint_in_first:
+                    line = node.start_point[0] + 1
+                    flows.append(
+                        TaintFlow(
+                            source=taint_in_first,
+                            sink_method=method,
+                            source_line=line,
+                            sink_line=line,
+                        )
+                    )
+                return
+
+        for arg in pos_args:
             taint_source = self._find_tainted_in_arg(arg, tainted, sanitized)
             if taint_source:
                 line = node.start_point[0] + 1

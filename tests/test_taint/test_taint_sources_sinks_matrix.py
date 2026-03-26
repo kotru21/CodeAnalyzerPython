@@ -73,6 +73,33 @@ app.get('/x', (req, res) => {
         flows = TaintTracker().analyze(make_js_context(code))
         assert_no_flow_with_sink(flows, "query")
 
+    def test_pg_placeholder__negative__taint_only_values_array(self) -> None:
+        code = """
+app.get('/u', (req, res) => {
+  db.query('SELECT * FROM users WHERE id = $1', [req.query.id]);
+});
+"""
+        flows = TaintTracker().analyze(make_js_context(code))
+        assert_no_flow_with_sink(flows, "query")
+
+    def test_concat_in_first_arg__positive__still_flows(self) -> None:
+        code = """
+app.get('/u', (req, res) => {
+  db.query('SELECT * FROM u WHERE id = ' + req.query.id, []);
+});
+"""
+        flows = TaintTracker().analyze(make_js_context(code))
+        assert_any_flow(flows, sink_method="query", source_substr="req.query")
+
+    def test_qmark_placeholder__negative__taint_only_values(self) -> None:
+        code = """
+app.get('/u', (req, res) => {
+  db.query('SELECT * FROM users WHERE id = ?', [req.body.x]);
+});
+"""
+        flows = TaintTracker().analyze(make_js_context(code))
+        assert_no_flow_with_sink(flows, "query")
+
     @pytest.mark.skip(reason="pool.execute sink optional in plan row 8")
     def test_mysql_pool_execute__optional__skipped(self) -> None:
         pass
