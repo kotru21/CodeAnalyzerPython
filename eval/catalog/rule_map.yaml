@@ -1,3 +1,7 @@
 version: 1
+# Near-match tolerance for line overlap (compare); see docs/superpowers/specs/2026-03-26-eval-semgrep-line-overlap-design.md
+line_slop: 0
+# Maps analyzer rule_id -> Semgrep check_id strings (exact match MVP) for line_overlap.
+equivalence_rules: {}
 # Maps analyzer rule_id -> list of Semgrep --config paths (repo-relative or absolute).
 rules: {}

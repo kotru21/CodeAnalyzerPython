@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +11,24 @@ import yaml
 class RuleMap:
     version: int
     rules: dict[str, list[str]]
+    line_slop: int = 0
+    equivalence_rules: dict[str, list[str]] = field(default_factory=dict)
+
+
+def _parse_str_list_map(raw: Any, *, field_name: str) -> dict[str, list[str]]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError(f"{field_name} must be a mapping")
+    out: dict[str, list[str]] = {}
+    for k, v in raw.items():
+        if not isinstance(k, str):
+            continue
+        if isinstance(v, str):
+            out[k] = [v]
+        elif isinstance(v, list) and all(isinstance(x, str) for x in v):
+            out[k] = list(v)
+    return out
 
 
 def load_rule_map(path: Path) -> RuleMap:
@@ -29,7 +47,20 @@ def load_rule_map(path: Path) -> RuleMap:
             rules[k] = [v]
         elif isinstance(v, list) and all(isinstance(x, str) for x in v):
             rules[k] = list(v)
-    return RuleMap(version=version, rules=rules)
+    line_slop_raw = raw.get("line_slop", 0)
+    if isinstance(line_slop_raw, bool) or not isinstance(line_slop_raw, int):
+        raise ValueError("line_slop must be an int")
+    line_slop = line_slop_raw
+    equivalence_rules = _parse_str_list_map(
+        raw.get("equivalence_rules"), field_name="equivalence_rules"
+    )
+    # Phase A: accept overrides in YAML but ignore (spec §3.2).
+    return RuleMap(
+        version=version,
+        rules=rules,
+        line_slop=line_slop,
+        equivalence_rules=equivalence_rules,
+    )
 
 
 def get_semgrep_configs_for_rule(
@@ -54,6 +85,17 @@ def _rule_ids_for_case(case: dict[str, Any]) -> list[str]:
             if isinstance(x, str):
                 ids.append(x)
     return ids
+
+
+def allowed_semgrep_check_ids_for_case(
+    case: dict[str, Any], rule_map: RuleMap
+) -> frozenset[str]:
+    out: set[str] = set()
+    eq = rule_map.equivalence_rules
+    for rid in _rule_ids_for_case(case):
+        for cid in eq.get(rid, ()):
+            out.add(cid)
+    return frozenset(out)
 
 
 def collect_semgrep_configs_for_cases(
