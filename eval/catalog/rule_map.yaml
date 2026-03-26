@@ -1,7 +1,50 @@
+# Semgrep ↔ analyzer mapping for `eval.cli compare` line_overlap.
+# check_id strings must match Semgrep JSON exactly (here: vendor clone under .vendor/semgrep-rules).
+# Rules with [] never get Semgrep lines in the overlap allowlist — extend when you add packs/snippets.
 version: 1
-# Near-match tolerance for line overlap (compare); see docs/superpowers/specs/2026-03-26-eval-semgrep-line-overlap-design.md
 line_slop: 0
-# Maps analyzer rule_id -> Semgrep check_id strings (exact match MVP) for line_overlap.
-equivalence_rules: {}
-# Maps analyzer rule_id -> list of Semgrep --config paths (repo-relative or absolute).
-rules: {}
+
+# Default --config tree when not passing --semgrep-config (repo-relative).
+rules:
+  JS-SQL-001: [.vendor/semgrep-rules/javascript]
+  JS-XSS-001: [.vendor/semgrep-rules/javascript]
+  JS-XSS-002: [.vendor/semgrep-rules/javascript]
+  JS-CMD-001: [.vendor/semgrep-rules/javascript]
+  JS-PATH-001: [.vendor/semgrep-rules/javascript]
+  JS-PROTO-001: [.vendor/semgrep-rules/javascript]
+  JS-SEC-001: [.vendor/semgrep-rules/javascript]
+  JS-DES-001: [.vendor/semgrep-rules/javascript]
+  JS-CRYPTO-001: [.vendor/semgrep-rules/javascript]
+  JS-REDIRECT-001: [.vendor/semgrep-rules/javascript]
+  JS-NOSQL-001: [.vendor/semgrep-rules/javascript]
+  JS-SSRF-001: [.vendor/semgrep-rules/javascript]
+  JS-REDOS-001: [.vendor/semgrep-rules/javascript]
+
+equivalence_rules:
+  JS-SQL-001:
+    - vendor.semgrep-rules.javascript.express.security.injection.tainted-sql-string
+  JS-XSS-001:
+    - vendor.semgrep-rules.javascript.browser.security.insecure-document-method
+    - vendor.semgrep-rules.javascript.browser.security.insecure-innerhtml
+  JS-XSS-002:
+    - vendor.semgrep-rules.javascript.browser.security.insecure-document-method
+    - vendor.semgrep-rules.javascript.browser.security.insecure-innerhtml
+  JS-CMD-001:
+    - vendor.semgrep-rules.javascript.lang.security.detect-child-process
+  JS-PATH-001:
+    - vendor.semgrep-rules.javascript.lang.security.audit.detect-non-literal-fs-filename
+  JS-PROTO-001:
+    - vendor.semgrep-rules.javascript.express.security.audit.remote-property-injection
+  JS-DES-001:
+    - vendor.semgrep-rules.javascript.browser.security.eval-detected
+    - vendor.semgrep-rules.javascript.lang.security.audit.code-string-concat
+  JS-REDIRECT-001:
+    - vendor.semgrep-rules.javascript.express.security.audit.express-open-redirect
+    - vendor.semgrep-rules.javascript.express.security.audit.unknown-value-in-redirect
+  JS-REDOS-001:
+    - vendor.semgrep-rules.javascript.lang.security.audit.detect-non-literal-regexp
+  # No hits from javascript/ pack on current catalog snippets (results: [] in compare raw).
+  JS-SEC-001: []
+  JS-CRYPTO-001: []
+  JS-NOSQL-001: []
+  JS-SSRF-001: []
