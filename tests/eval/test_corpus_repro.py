@@ -36,5 +36,7 @@ def test_config_bundle_hashes_single_file(tmp_path: Path) -> None:
     f = tmp_path / "rules.yaml"
     f.write_text("rules: []\n", encoding="utf-8")
     h = config_bundle_hashes([f])
-    assert "rules.yaml" in h
-    assert len(h["rules.yaml"]) == 64
+    keys = list(h.keys())
+    assert len(keys) == 1
+    assert keys[0].endswith("rules.yaml")
+    assert len(h[keys[0]]) == 64

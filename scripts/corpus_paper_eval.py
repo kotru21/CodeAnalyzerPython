@@ -152,28 +152,31 @@ def main() -> int:
     files_set = set(relpaths)
 
     def semgrep_findings_total() -> int:
-        if args.policy == "b":
-            n = 0
-            for r in all_results:
-                rp = semgrep_result_relpath(
-                    corpus, str(r.get("path")) if r.get("path") else None
-                )
-                if rp in files_set:
-                    n += 1
-            return n
-        allow = set()
-        for b in buckets:
-            allow.update(rule_map.equivalence_rules.get(b, ()))
+        """Count results that contribute to line overlap (str check_id, int line, path in set)."""
+        if args.policy == "a":
+            allow: set[str] | None = set()
+            for b in buckets:
+                allow.update(rule_map.equivalence_rules.get(b, ()))
+        else:
+            allow = None
         n = 0
         for r in all_results:
+            if not isinstance(r, dict):
+                continue
             check = r.get("check_id") or r.get("rule_id")
-            if not isinstance(check, str) or check not in allow:
+            if not isinstance(check, str):
+                continue
+            if allow is not None and check not in allow:
                 continue
             rp = semgrep_result_relpath(
                 corpus, str(r.get("path")) if r.get("path") else None
             )
-            if rp in files_set:
-                n += 1
+            if rp not in files_set:
+                continue
+            start = r.get("start")
+            if not isinstance(start, dict) or not isinstance(start.get("line"), int):
+                continue
+            n += 1
         return n
 
     findings_by_rel: dict[str, list[Any]] = {}
@@ -183,6 +186,12 @@ def main() -> int:
     with httpx.Client() as client:
         for rel in relpaths:
             abs_path = (corpus / rel).resolve()
+            try:
+                abs_path.relative_to(corpus.resolve())
+            except ValueError:
+                print(f"SKIP (outside corpus): {rel}", file=sys.stderr)
+                findings_by_rel[rel] = []
+                continue
             body = {
                 "source_code": abs_path.read_text(encoding="utf-8", errors="replace"),
                 "file_path": abs_path.name,
@@ -254,7 +263,12 @@ def main() -> int:
         "corpus_snapshot_hash": args.corpus_snapshot_hash.strip(),
         "file_universe_rule": fur,
         "policy": args.policy,
-        "policy_b_note": POLICY_B_NOTE if args.policy == "b" else None,
+        "policy_b_note": (
+            POLICY_B_NOTE
+            + " Analyzer lines only include findings with string rule_id."
+            if args.policy == "b"
+            else None
+        ),
         "analyzer_invoke": invoke,
         "analyzer_version": av,
         "analyzer_git_commit": ag,

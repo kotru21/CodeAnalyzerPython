@@ -55,6 +55,10 @@ def list_js_ts_relpaths_git(
         if suf not in ext:
             continue
         p = (root / rel).resolve()
+        try:
+            p.relative_to(root)
+        except ValueError:
+            continue
         if not p.is_file():
             continue
         out.append(Path(rel).as_posix())

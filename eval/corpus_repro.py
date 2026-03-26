@@ -16,15 +16,16 @@ def sha256_file(path: Path) -> str:
 
 
 def config_bundle_hashes(paths: list[Path]) -> dict[str, str]:
+    """Keys are unique per resolved path (avoids basename collisions)."""
     out: dict[str, str] = {}
     for p in paths:
         r = p.resolve()
         if r.is_file():
-            out[r.name] = sha256_file(r)
+            out[str(r).replace("\\", "/")] = sha256_file(r)
         elif r.is_dir():
-            for f in sorted(r.rglob("*.yml")) + sorted(r.rglob("*.yaml")):
+            for f in sorted(set(r.rglob("*.yml")).union(r.rglob("*.yaml"))):
                 if f.is_file():
-                    key = str(f.relative_to(r)).replace("\\", "/")
+                    key = str(f.resolve()).replace("\\", "/")
                     out[key] = sha256_file(f)
     return out
 
