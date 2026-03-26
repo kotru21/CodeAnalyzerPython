@@ -7,6 +7,9 @@ from eval.catalog_loader import load_rule_ids, should_skip_main
 from eval.classify import classify_outcome
 from eval.report_md import render_report
 
+from eval.backends.semgrep_batch import batch_scan_semgrep
+from eval.backends.semgrep_case import SemgrepCaseBackend
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -31,6 +34,18 @@ def run_catalog(
     multi = len(backends) > 1
     rows: list[dict[str, Any]] = []
 
+    semgrep_backend = next((b for b in backends if b.name == "semgrep"), None)
+    semgrep_by_tid: dict[str, Any] = {}
+    if isinstance(semgrep_backend, SemgrepCaseBackend):
+        active = [c for c in cases if not should_skip_main(c)]
+        # One Semgrep process for the whole catalog (vs N runs per case).
+        batch_timeout = max(semgrep_backend.timeout_sec, 600)
+        semgrep_by_tid = batch_scan_semgrep(
+            active,
+            semgrep_backend.config_paths,
+            timeout_sec=batch_timeout,
+        )
+
     for case in cases:
         tid = case["test_id"]
         if should_skip_main(case):
@@ -53,7 +68,14 @@ def run_catalog(
         analyzer_err: str | None = None
 
         for b in backends:
-            res = b.scan_case(case)
+            if (
+                b.name == "semgrep"
+                and isinstance(semgrep_backend, SemgrepCaseBackend)
+                and tid in semgrep_by_tid
+            ):
+                res = semgrep_by_tid[tid]
+            else:
+                res = b.scan_case(case)
             raw_name = _raw_basename(tid, b.name)
             raw_path = raw_dir / raw_name
             if res.ok:

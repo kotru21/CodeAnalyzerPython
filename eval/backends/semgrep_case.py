@@ -30,6 +30,14 @@ class SemgrepCaseBackend:
         self._config_paths = config_paths
         self._timeout_sec = timeout_sec
 
+    @property
+    def config_paths(self) -> list[Path]:
+        return list(self._config_paths)
+
+    @property
+    def timeout_sec(self) -> int:
+        return self._timeout_sec
+
     def scan_case(self, case: dict[str, Any]) -> BackendScanResult:
         existing = [p for p in self._config_paths if p.is_file() or p.is_dir()]
         if not existing:
