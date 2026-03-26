@@ -181,6 +181,12 @@ app.get('/', (req, res) => {
 
 Single-file HTTP benchmark for precision/recall style scoring (see `docs/superpowers/plans/2026-03-26-analyzer-effectiveness-evaluation.md`).
 
+### Internal catalog dataset (`eval/cases_pack` → `eval/catalog/cases.json`)
+
+This is a **project-owned** set of small synthetic snippets (one “file” per `test_id`), maintained in **`eval/cases_pack/`** and exported to **`eval/catalog/cases.json`** via `eval.build_cases`. Labels (`type: vulnerable|safe`, expected rule/CWE) are **for this repo only**.
+
+**Role:** **regression and development**—track TP/TN/FN/FP against those labels, and (with `eval.cli compare`) check **line_overlap** vs Semgrep on the **same** snippets. It is **not** a standalone, citable real-world benchmark. For publications or external baselines, use a frozen third-party corpus and **`scripts/corpus_paper_eval.py`** (see below and `docs/superpowers/specs/2026-03-26-external-js-ts-corpus-semgrep-design.md`).
+
 1. Regenerate the JSON catalog after editing Python case definitions: `py -3 -m eval.build_cases`
 2. Start the stack: `docker compose up --build` (needs API on port 8000 and, for async checks, the `worker` service)
 3. Run sync scans and write `eval/results/report.md` plus raw JSON: `py -3 -m eval.cli run --base-url http://localhost:8000`
@@ -217,7 +223,7 @@ Single-file HTTP benchmark for precision/recall style scoring (see `docs/superpo
 
 ### Current catalog compare vs Semgrep
 
-Numbers below are from **`eval.cli compare`** on **`eval/catalog/cases.json`** (87 non-`SKIP` cases), Semgrep **`--config .vendor/semgrep-rules/javascript`**, and **`eval/catalog/rule_map.yaml`** `equivalence_rules` as committed. Recorded **2026-03-26**. Re-run the compare command in [Reproducing the catalog benchmark](#reproducing-the-catalog-benchmark) to refresh; **`compare_summary.json` is not in git**.
+Numbers below are from **`eval.cli compare`** on the **internal catalog** above (**`eval/catalog/cases.json`**, 87 non-`SKIP` cases), Semgrep **`--config .vendor/semgrep-rules/javascript`**, and **`eval/catalog/rule_map.yaml`** `equivalence_rules` as committed. Recorded **2026-03-26**. Re-run the compare command in [Reproducing the catalog benchmark](#reproducing-the-catalog-benchmark) to refresh; **`compare_summary.json` is not in git**.
 
 | Metric | Value |
 |--------|------:|
