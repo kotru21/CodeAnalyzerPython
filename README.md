@@ -185,7 +185,13 @@ Single-file HTTP benchmark for precision/recall style scoring (see `docs/superpo
 
 This is a **project-owned** set of small synthetic snippets (one “file” per `test_id`), maintained in **`eval/cases_pack/`** and exported to **`eval/catalog/cases.json`** via `eval.build_cases`. Labels (`type: vulnerable|safe`, expected rule/CWE) are **for this repo only**.
 
-**Role:** **regression and development**—track TP/TN/FN/FP against those labels, and (with `eval.cli compare`) check **line_overlap** vs Semgrep on the **same** snippets. It is **not** a standalone, citable real-world benchmark. For publications or external baselines, use a frozen third-party corpus and **`scripts/corpus_paper_eval.py`** (see below and `docs/superpowers/specs/2026-03-26-external-js-ts-corpus-semgrep-design.md`).
+**Role:** **regression and development**—track TP/TN/FN/FP against those labels, and (with `eval.cli compare`) check **line_overlap** vs Semgrep on the **same** snippets. It is **not** a standalone, citable real-world benchmark.
+
+### External tree run (`corpus_paper_eval`) — Semgrep agreement, not gold labels
+
+**Second evaluation track:** scan a **directory tree** you choose (JS/TS files) with Semgrep and the HTTP analyzer, then summarize **line-level agreement** in `corpus_eval_summary.json`. There is **no** project TP/FN oracle here—only counts like matched lines vs Semgrep under **Policy A/B** (see `docs/superpowers/specs/2026-03-26-external-js-ts-corpus-semgrep-design.md`).
+
+The repo often uses a clone of **[semgrep-rules](https://github.com/semgrep/semgrep-rules) `javascript/`** as a **convenience corpus** (mostly rule examples and test snippets—not a CVE-labeled benchmark). For a thesis/paper, point `--corpus` at a **frozen, citable** snapshot instead.
 
 1. Regenerate the JSON catalog after editing Python case definitions: `py -3 -m eval.build_cases`
 2. Start the stack: `docker compose up --build` (needs API on port 8000 and, for async checks, the `worker` service)
@@ -238,19 +244,23 @@ Numbers below are from **`eval.cli compare`** on the **internal catalog** above 
 
 Gold **TP/TN/FN/FP** are vs the catalog, not vs Semgrep. **`line_overlap`** is greedy pairing under `equivalence_rules` only (mapping-dependent agreement).
 
-### Semgrep-rules `javascript/` snapshot (reference)
+### Current `corpus_paper_eval` run (example: `semgrep-rules` `javascript/`)
 
-Recorded on one machine for **orientation only**: Semgrep and this service use different rule sets and severities, so totals are **not** precision/recall against a shared ground truth. The **per-file overlap** row below used a coarse **file-level** notion (both tools had ≥1 finding in the same file); for **line-level** agreement and reproducibility metadata use `corpus_paper_eval.py` and the JSON it writes.
+Example **external-tree** run: **Policy B** (all analyzer findings vs all in-scope Semgrep hits on the same files). **`corpus_eval_summary.json` is gitignored**—re-run to refresh.
 
 | Item | Value |
-|------|--------|
-| **Corpus** | [semgrep-rules](https://github.com/semgrep/semgrep-rules) path `javascript/`, shallow clone **`28db38e`** |
-| **Files** | 174 (`.js` / `.jsx` / `.ts` / `.tsx` under that tree) |
-| **Semgrep** | CLI **1.156.0**, `--config` = same `javascript/` tree, **897** result rows (matches) |
-| **This analyzer** | API **0.1.0**, **13** rules, taint on, **215** findings summed over the same files (single-file `POST /api/v1/analyze/sync` per file) |
-| **Per-file overlap (coarse)** | **50** files where both tools had ≥1 finding; **124** Semgrep-only; **0** analyzer-only |
-| **HTTP errors** | **0** |
-| **Raw output (line-level)** | `eval/results/corpus_eval_summary.json` (gitignored; `py -3 scripts/corpus_paper_eval.py …`) |
+|------|------:|
+| **Corpus** | `.vendor/semgrep-rules/javascript` (174 `.js`/`.jsx`/`.ts`/`.tsx` files, `walk:rglob_ext=…`) |
+| **Rules commit** | `28db38e6376df4995dac96f41984cc5690549553` |
+| **Semgrep** | CLI **1.156.0**, `--config` = same `javascript/` tree |
+| **Command** | `py -3 scripts/corpus_paper_eval.py --corpus .vendor/semgrep-rules/javascript --semgrep-config .vendor/semgrep-rules/javascript --policy b --analyzer http://127.0.0.1:8000` (plus `--out` / `--corpus-id` as you prefer) |
+| **`semgrep_findings_total`** (counted rows with string `check_id` + line) | **868** |
+| **`analyzer_findings_total`** | **215** |
+| **`matched_line_pairs`** | **115** |
+| **`analyzer_only_lines`** | **75** |
+| **`semgrep_only_lines`** | **614** |
+
+These numbers are **Semgrep agreement under Policy B**, not precision/recall vs a labeled dataset. Older ad-hoc **per-file** “both tools ≥1 hit” stats are deprecated in favor of the line-level JSON above.
 
 ## Architecture
 
