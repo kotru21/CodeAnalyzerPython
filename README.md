@@ -215,6 +215,23 @@ Single-file HTTP benchmark for precision/recall style scoring (see `docs/superpo
 
 `eval/results/*.json` and `report.md` are gitignored; committed sources live under `eval/catalog/` and `eval/cases_pack/`.
 
+### Current catalog compare vs Semgrep
+
+Numbers below are from **`eval.cli compare`** on **`eval/catalog/cases.json`** (87 non-`SKIP` cases), Semgrep **`--config .vendor/semgrep-rules/javascript`**, and **`eval/catalog/rule_map.yaml`** `equivalence_rules` as committed. Recorded **2026-03-26**. Re-run the compare command in [Reproducing the catalog benchmark](#reproducing-the-catalog-benchmark) to refresh; **`compare_summary.json` is not in git**.
+
+| Metric | Value |
+|--------|------:|
+| Gold outcomes (catalog labels, same rows) | **TP** 41, **TN** 34, **FN** 6, **FP** 6 |
+| Sum of per-case `finding_count` (HTTP analyzer) | 64 |
+| Sum of per-case `finding_count` (Semgrep) | 27 |
+| Cases with any in-map Semgrep line (`semgrep_lines_in_map` non-empty) | 22 |
+| Cases with ≥1 **`line_overlap.matched_lines`** pair | 15 |
+| Total matched line pairs (sum of `len(matched_lines)`) | 16 |
+| Total analyzer-only lines (sum of `analyzer_only_lines`) | 27 |
+| Total Semgrep-only lines (sum of `semgrep_only_lines`) | 7 |
+
+Gold **TP/TN/FN/FP** are vs the catalog, not vs Semgrep. **`line_overlap`** is greedy pairing under `equivalence_rules` only (mapping-dependent agreement).
+
 ### Semgrep-rules `javascript/` snapshot (reference)
 
 Recorded on one machine for **orientation only**: Semgrep and this service use different rule sets and severities, so totals are **not** precision/recall against a shared ground truth. The **per-file overlap** row below used a coarse **file-level** notion (both tools had ≥1 finding in the same file); for **line-level** agreement and reproducibility metadata use `corpus_paper_eval.py` and the JSON it writes.
