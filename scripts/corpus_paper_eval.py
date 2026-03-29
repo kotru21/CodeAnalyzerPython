@@ -10,46 +10,16 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections import defaultdict
 from pathlib import Path
-from typing import Any
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-import httpx  # noqa: E402
-
-from eval.backends.semgrep_subprocess import run_semgrep_json_configs  # noqa: E402
 from eval.catalog_loader import repo_root  # noqa: E402
-from eval.corpus_agreement import (  # noqa: E402
-    aggregate_overlap_payloads,
-    buckets_for_policy,
-    overlap_for_file_bucket,
-)
-from eval.corpus_paths import (  # noqa: E402
-    DEFAULT_JS_TS_EXTENSIONS,
-    list_js_ts_relpaths_git,
-    list_js_ts_relpaths_walk,
-)
-from eval.corpus_repro import config_bundle_hashes, semgrep_cli_version  # noqa: E402
-from eval.corpus_semgrep_normalize import semgrep_result_relpath  # noqa: E402
+from eval.corpus_agreement import buckets_for_policy  # noqa: E402
+from eval.corpus_paper_runner import run_paper_eval  # noqa: E402
 from eval.rule_map import load_rule_map  # noqa: E402
-
-POLICY_B_NOTE = (
-    "check_id filter: none (all Semgrep results per file under given --semgrep-config)"
-)
-
-
-def _environment_fields(
-    note: str | None, out_of_scope_flag: bool
-) -> tuple[str | None, bool]:
-    """§7: explicit note and/or environment_out_of_scope."""
-    if out_of_scope_flag:
-        return note, True
-    if note:
-        return note, False
-    return None, True
 
 
 def main() -> int:
@@ -137,162 +107,23 @@ def main() -> int:
         )
         return 2
 
-    if args.file_mode == "walk":
-        relpaths = list_js_ts_relpaths_walk(corpus)
-        fur = "walk:rglob_ext=" + ",".join(sorted(DEFAULT_JS_TS_EXTENSIONS))
-    else:
-        relpaths = list_js_ts_relpaths_git(corpus)
-        fur = "git:ls-files+ext_filter=" + ",".join(sorted(DEFAULT_JS_TS_EXTENSIONS))
-
-    if args.max_files > 0:
-        relpaths = relpaths[: args.max_files]
-
-    raw = run_semgrep_json_configs(configs, corpus, timeout_sec=args.semgrep_timeout)
-    all_results = [r for r in raw.get("results") or [] if isinstance(r, dict)]
-    files_set = set(relpaths)
-
-    def semgrep_findings_total() -> int:
-        """Count results that contribute to line overlap (str check_id, int line, path in set)."""
-        if args.policy == "a":
-            allow: set[str] | None = set()
-            for b in buckets:
-                allow.update(rule_map.equivalence_rules.get(b, ()))
-        else:
-            allow = None
-        n = 0
-        for r in all_results:
-            if not isinstance(r, dict):
-                continue
-            check = r.get("check_id") or r.get("rule_id")
-            if not isinstance(check, str):
-                continue
-            if allow is not None and check not in allow:
-                continue
-            rp = semgrep_result_relpath(
-                corpus, str(r.get("path")) if r.get("path") else None
-            )
-            if rp not in files_set:
-                continue
-            start = r.get("start")
-            if not isinstance(start, dict) or not isinstance(start.get("line"), int):
-                continue
-            n += 1
-        return n
-
-    findings_by_rel: dict[str, list[Any]] = {}
-    base = args.analyzer.rstrip("/")
-    url = f"{base}/api/v1/analyze/sync"
-
-    with httpx.Client() as client:
-        for rel in relpaths:
-            abs_path = (corpus / rel).resolve()
-            try:
-                abs_path.relative_to(corpus.resolve())
-            except ValueError:
-                print(f"SKIP (outside corpus): {rel}", file=sys.stderr)
-                findings_by_rel[rel] = []
-                continue
-            body = {
-                "source_code": abs_path.read_text(encoding="utf-8", errors="replace"),
-                "file_path": abs_path.name,
-                "config": {"enable_taint": True},
-            }
-            try:
-                r = client.post(url, json=body, timeout=120.0)
-                r.raise_for_status()
-                data = r.json()
-            except (httpx.HTTPError, ValueError, OSError) as e:
-                print(f"ERROR {rel}: {e}", file=sys.stderr)
-                findings_by_rel[rel] = []
-                continue
-            findings = data.get("findings") if isinstance(data, dict) else []
-            findings_by_rel[rel] = findings if isinstance(findings, list) else []
-
-    def analyzer_findings_total() -> int:
-        total = 0
-        for rel in relpaths:
-            findings = findings_by_rel.get(rel, [])
-            if args.policy == "b":
-                total += sum(1 for f in findings if isinstance(f, dict))
-            else:
-                for f in findings:
-                    if isinstance(f, dict) and f.get("rule_id") in buckets:
-                        total += 1
-        return total
-
-    sg_total = semgrep_findings_total()
-    an_total = analyzer_findings_total()
-
-    per_bucket_payloads: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for rel in relpaths:
-        findings = [f for f in findings_by_rel.get(rel, []) if isinstance(f, dict)]
-        for bucket in buckets:
-            payload = overlap_for_file_bucket(
-                line_slop=rule_map.line_slop,
-                policy=args.policy,
-                bucket=bucket,
-                rule_map=rule_map,
-                analyzer_findings=findings,
-                semgrep_results_full=all_results,
-                corpus_root=corpus,
-                relpath=rel,
-            )
-            per_bucket_payloads[bucket].append(payload)
-
-    flat_payloads = [p for lst in per_bucket_payloads.values() for p in lst]
-    agg = aggregate_overlap_payloads(flat_payloads)
-    by_bucket = {
-        b: aggregate_overlap_payloads(lst) for b, lst in per_bucket_payloads.items()
-    }
-
-    hashes = config_bundle_hashes(configs)
-    semgrep_argv = ["scan", "--json", "--quiet"]
-    for c in configs:
-        semgrep_argv.extend(["--config", str(c)])
-    semgrep_argv.append(str(corpus))
-
-    env_note = args.environment_note.strip() or None
-    env_note, env_oos = _environment_fields(env_note, args.environment_out_of_scope)
-
-    av = args.analyzer_version.strip() or None
-    ag = args.analyzer_git_commit.strip() or None
-    invoke = args.analyzer_invoke.strip() or f"POST {url}"
-
-    summary: dict[str, Any] = {
-        "corpus_id": args.corpus_id.strip() or corpus.name,
-        "corpus_snapshot_hash": args.corpus_snapshot_hash.strip(),
-        "file_universe_rule": fur,
-        "policy": args.policy,
-        "policy_b_note": (
-            POLICY_B_NOTE
-            + " Analyzer lines only include findings with string rule_id."
-            if args.policy == "b"
-            else None
-        ),
-        "analyzer_invoke": invoke,
-        "analyzer_version": av,
-        "analyzer_git_commit": ag,
-        "analyzer_identity_note": (
-            None
-            if (av or ag)
-            else "not provided; pass --analyzer-git-commit or --analyzer-version for paper"
-        ),
-        "semgrep_version": semgrep_cli_version(),
-        "semgrep_config_paths": [str(c) for c in configs],
-        "semgrep_config_sha256": hashes,
-        "semgrep_cli_argv": semgrep_argv,
-        "environment_note": env_note,
-        "environment_out_of_scope": env_oos,
-        "files_scanned": len(relpaths),
-        "files_with_js_ts": len(relpaths),
-        "analyzer_findings_total": an_total,
-        "semgrep_findings_total": sg_total,
-        "matched_line_pairs": agg["matched_line_pairs"],
-        "analyzer_only_lines": agg["analyzer_only_lines"],
-        "semgrep_only_lines": agg["semgrep_only_lines"],
-        "aggregate": agg,
-        "by_bucket": by_bucket,
-    }
+    summary = run_paper_eval(
+        corpus=corpus,
+        configs=configs,
+        rule_map=rule_map,
+        policy=args.policy,
+        file_mode=args.file_mode,
+        analyzer_base=args.analyzer,
+        max_files=args.max_files,
+        semgrep_timeout=args.semgrep_timeout,
+        corpus_id=args.corpus_id,
+        corpus_snapshot_hash=args.corpus_snapshot_hash,
+        analyzer_invoke=args.analyzer_invoke,
+        analyzer_version=args.analyzer_version,
+        analyzer_git_commit=args.analyzer_git_commit,
+        environment_note=args.environment_note,
+        environment_out_of_scope=args.environment_out_of_scope,
+    )
 
     out_path = args.out if args.out.is_absolute() else (root / args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
