@@ -5,15 +5,14 @@ from tree_sitter import Node
 from analyzer.rules.base import AnalysisContext
 from analyzer.taint.patterns import bind_pattern_from_source
 from analyzer.taint.sanitizers import SANITIZER_NAMES, is_parameterized_query
+from analyzer.taint.source_match import find_matching_source
 from analyzer.taint.sources_sinks import (
+    COMMAND_SINK_METHOD_NAMES,
     SINK_IDENTIFIERS,
     SINK_MEMBER_PATTERNS,
-    SOURCE_PATTERNS,
     SQL_SINK_METHOD_NAMES,
+    is_weak_source,
 )
-
-# Longer patterns first so e.g. req.files wins over req.file as substring
-_SOURCE_PATTERNS_SORTED: tuple[str, ...] = tuple(sorted(SOURCE_PATTERNS, key=len, reverse=True))
 
 MAX_INTERPROC_DEPTH = 5
 
@@ -371,12 +370,12 @@ class TaintTracker:
             tainted[var_name] = source
 
     def _extract_source(self, node: Node, tainted: dict[str, str]) -> str | None:
-        text = node.text.decode() if node.text else ""
-        norm = _normalize_optional_access(text)
+        if node.type in ("identifier", "member_expression"):
+            match = find_matching_source(node)
+            if match:
+                return match
 
-        for pattern in _SOURCE_PATTERNS_SORTED:
-            if pattern in norm:
-                return pattern
+        text = node.text.decode() if node.text else ""
 
         if node.type == "identifier" and text in tainted:
             return tainted[text]
@@ -405,12 +404,13 @@ class TaintTracker:
                             if result:
                                 return result
 
-        if node.type == "member_expression":
-            for pattern in _SOURCE_PATTERNS_SORTED:
-                if norm.startswith(pattern):
-                    return pattern
-
         return None
+
+    @staticmethod
+    def _should_report_flow(taint_source: str, sink_method: str) -> bool:
+        if is_weak_source(taint_source) and sink_method not in COMMAND_SINK_METHOD_NAMES:
+            return False
+        return True
 
     def _check_sink(
         self,
@@ -440,7 +440,9 @@ class TaintTracker:
                 taint_in_first = self._find_tainted_in_arg(
                     first, tainted, sanitized
                 )
-                if taint_in_first:
+                if taint_in_first and self._should_report_flow(
+                    taint_in_first, method
+                ):
                     line = node.start_point[0] + 1
                     flows.append(
                         TaintFlow(
@@ -454,7 +456,7 @@ class TaintTracker:
 
         for arg in pos_args:
             taint_source = self._find_tainted_in_arg(arg, tainted, sanitized)
-            if taint_source:
+            if taint_source and self._should_report_flow(taint_source, method):
                 line = node.start_point[0] + 1
                 flows.append(
                     TaintFlow(
@@ -470,7 +472,6 @@ class TaintTracker:
         self, node: Node, tainted: dict[str, str], sanitized: set[str]
     ) -> str | None:
         text = node.text.decode() if node.text else ""
-        norm = _normalize_optional_access(text)
 
         if node.type == "identifier":
             if text in sanitized:
@@ -478,9 +479,10 @@ class TaintTracker:
             if text in tainted:
                 return tainted[text]
 
-        for pattern in _SOURCE_PATTERNS_SORTED:
-            if pattern in norm:
-                return pattern
+        if node.type in ("identifier", "member_expression"):
+            match = find_matching_source(node)
+            if match:
+                return match
 
         for child in node.children:
             result = self._find_tainted_in_arg(child, tainted, sanitized)

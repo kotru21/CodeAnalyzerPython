@@ -47,6 +47,12 @@ ALL_SOURCES: list[TaintSource] = EXPRESS_SOURCES + KOA_SOURCES + FASTIFY_SOURCES
 
 SOURCE_PATTERNS: frozenset[str] = frozenset(s.pattern for s in ALL_SOURCES)
 
+WEAK_SOURCE_PATTERNS: frozenset[str] = frozenset({"process.env"})
+
+
+def is_weak_source(pattern: str) -> bool:
+    return pattern in WEAK_SOURCE_PATTERNS
+
 
 SQL_SINKS: list[TaintSink] = [
     TaintSink("db.query", "sql", "Database query"),
@@ -104,3 +110,5 @@ SINK_MEMBER_PATTERNS: frozenset[str] = frozenset(s.pattern for s in ALL_SINKS if
 SQL_SINK_METHOD_NAMES: frozenset[str] = frozenset(
     s.pattern.split(".")[-1] for s in SQL_SINKS if "." in s.pattern
 )
+
+COMMAND_SINK_METHOD_NAMES: frozenset[str] = frozenset(s.pattern for s in COMMAND_SINKS)
