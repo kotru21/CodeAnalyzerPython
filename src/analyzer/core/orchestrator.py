@@ -57,6 +57,8 @@ class Orchestrator:
             rules = [r for r in rules if r.meta().rule_id in allowed]
 
         raw_findings, failed_rules = self._run_rules(rules, context, deadline)
+        for rf in raw_findings:
+            rf.file_path = context.file_path
         time_budget_exceeded = deadline is not None and time.monotonic() > deadline
 
         if request.config.enable_taint and not time_budget_exceeded:
@@ -225,25 +227,33 @@ class Orchestrator:
                         line_end=flow.sink_line,
                         extra_info=f"taint: {flow.source} → {flow.sink_method}",
                         file_path=file_path,
+                        taint_confirmed=True,
                     )
                 )
         return results
 
     @staticmethod
     def _deduplicate(findings: list[RawFinding]) -> list[RawFinding]:
-        seen: set[str] = set()
-        deduped: list[RawFinding] = []
+        merged: dict[str, RawFinding] = {}
         for f in findings:
-            key = md5_fingerprint(
-                f.rule_id,
-                str(f.line_start),
-                str(f.column or 0),
-                f.file_path or "",
-            )
-            if key not in seen:
-                seen.add(key)
-                deduped.append(f)
-        return deduped
+            key = md5_fingerprint(f.rule_id, str(f.line_start), f.file_path or "")
+            existing = merged.get(key)
+            if existing is None:
+                merged[key] = f
+                continue
+            if f.taint_confirmed:
+                existing.taint_confirmed = True
+            if f.extra_info and "taint:" in f.extra_info:
+                existing.extra_info = (
+                    f"{existing.extra_info}; {f.extra_info}".strip("; ")
+                    if existing.extra_info
+                    else f.extra_info
+                )
+            if existing.column is None and f.column is not None:
+                existing.column = f.column
+            if not existing.code_snippet and f.code_snippet:
+                existing.code_snippet = f.code_snippet
+        return list(merged.values())
 
     def _filter_severity(
         self,
