@@ -15,6 +15,7 @@ def mk(
     tags: list[str] | None = None,
     expected_rule_ids: list[str] | None = None,
     notes_expected_count: int | None = None,
+    expected_findings: list[dict] | None = None,
 ) -> dict:
     row: dict = {
         "test_id": test_id,
@@ -33,4 +34,6 @@ def mk(
         row["expected_rule_ids"] = expected_rule_ids
     if notes_expected_count is not None:
         row["notes_expected_count"] = notes_expected_count
+    if expected_findings is not None:
+        row["expected_findings"] = expected_findings
     return row

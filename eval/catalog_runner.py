@@ -5,6 +5,11 @@ from typing import TYPE_CHECKING, Any
 
 from eval.catalog_loader import load_rule_ids, should_skip_main
 from eval.classify import classify_outcome
+from eval.finding_match import (
+    classify_case_findings,
+    expand_rows_for_metrics,
+    primary_outcome,
+)
 from eval.report_md import render_report
 
 from eval.backends.semgrep_batch import batch_scan_semgrep
@@ -111,9 +116,14 @@ def run_catalog(
                     analyzer_err = res.error
 
         has_analyzer = any(b.name == "analyzer_http" for b in backends)
+        finding_outcomes: list[str] | None = None
         if has_analyzer:
             if analyzer_data is not None:
-                outcome = classify_outcome(case, analyzer_data)
+                if case.get("expected_findings") is not None:
+                    finding_outcomes = classify_case_findings(case, analyzer_data)
+                    outcome = primary_outcome(finding_outcomes)
+                else:
+                    outcome = classify_outcome(case, analyzer_data)
                 stats = analyzer_data.get("stats") or {}
                 total = stats.get(
                     "total_findings", len(analyzer_data.get("findings") or [])
@@ -127,6 +137,10 @@ def run_catalog(
             nec = case.get("notes_expected_count")
             if nec is not None and isinstance(total, int):
                 notes = (notes + f" expected_count~{nec} actual={total}").strip()
+            if finding_outcomes:
+                notes = (
+                    notes + f" finding_outcomes={','.join(finding_outcomes)}"
+                ).strip()
         else:
             outcome = "ERROR"
             total = "—"
@@ -142,12 +156,16 @@ def run_catalog(
             "notes": notes,
             "multi_case": bool(case.get("expected_rule_ids")),
         }
+        if finding_outcomes is not None:
+            row["finding_outcomes"] = finding_outcomes
         if multi:
             row["by_backend"] = by_backend
         rows.append(row)
 
     if write_report and out_dir is not None and catalog_dir is not None:
-        metric_rows = [r for r in rows if r.get("outcome") != "SKIP"]
+        metric_rows = expand_rows_for_metrics(
+            [r for r in rows if r.get("outcome") != "SKIP"]
+        )
         rule_ids = load_rule_ids(catalog_dir)
         md = render_report(metric_rows, rule_ids)
         (out_dir / "report.md").write_text(md, encoding="utf-8")

@@ -13,6 +13,9 @@ def cases_sql_cmd() -> list[dict]:
             "CWE-89",
             "Прямой SQL-шаблон с req.query",
             notes_expected_count=2,
+            expected_findings=[
+                {"rule_id": "JS-SQL-001", "line": 1, "cwe_id": "CWE-89"},
+            ],
         ),
         mk(
             "SQL-EASY-SAFE-01",
@@ -23,6 +26,7 @@ def cases_sql_cmd() -> list[dict]:
             "db.query('SELECT * FROM users WHERE id = $1', [req.query.id]);",
             None,
             "Параметризованный запрос",
+            expected_findings=[],
         ),
         mk(
             "SQL-MED-VULN-01",
@@ -70,6 +74,9 @@ app.get('/x', (req, res) => {
 });""",
             "CWE-89",
             "Same-file inter-procedural bare id к sink",
+            expected_findings=[
+                {"rule_id": "JS-SQL-001", "line": 5, "cwe_id": "CWE-89"},
+            ],
         ),
         mk(
             "SQL-HARD-SAFE-01",

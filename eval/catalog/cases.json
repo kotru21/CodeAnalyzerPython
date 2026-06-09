@@ -11,7 +11,14 @@
     },
     "expected_cwe": "CWE-89",
     "description": "Прямой SQL-шаблон с req.query",
-    "notes_expected_count": 2
+    "notes_expected_count": 2,
+    "expected_findings": [
+      {
+        "rule_id": "JS-SQL-001",
+        "line": 1,
+        "cwe_id": "CWE-89"
+      }
+    ]
   },
   {
     "test_id": "SQL-EASY-SAFE-01",
@@ -24,7 +31,8 @@
       "enable_taint": true
     },
     "expected_cwe": null,
-    "description": "Параметризованный запрос"
+    "description": "Параметризованный запрос",
+    "expected_findings": []
   },
   {
     "test_id": "SQL-MED-VULN-01",
@@ -63,7 +71,14 @@
       "enable_taint": true
     },
     "expected_cwe": "CWE-89",
-    "description": "Same-file inter-procedural bare id к sink"
+    "description": "Same-file inter-procedural bare id к sink",
+    "expected_findings": [
+      {
+        "rule_id": "JS-SQL-001",
+        "line": 5,
+        "cwe_id": "CWE-89"
+      }
+    ]
   },
   {
     "test_id": "SQL-HARD-SAFE-01",
