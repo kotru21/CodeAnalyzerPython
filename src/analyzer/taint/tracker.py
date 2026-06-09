@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from tree_sitter import Node
 
 from analyzer.rules.base import AnalysisContext
+from analyzer.taint.patterns import bind_pattern_from_source
 from analyzer.taint.sanitizers import SANITIZER_NAMES, is_parameterized_query
 from analyzer.taint.sources_sinks import (
     SINK_IDENTIFIERS,
@@ -329,7 +330,11 @@ class TaintTracker:
 
         source = self._extract_source(value_node, tainted)
         if source:
-            tainted[var_name] = source
+            if name_node.type == "identifier":
+                tainted[var_name] = source
+            else:
+                bind_pattern_from_source(name_node, source, tainted)
+            return
 
     def _handle_assignment(
         self,
