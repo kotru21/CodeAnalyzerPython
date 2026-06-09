@@ -1,6 +1,7 @@
 from analyzer.api.schemas import AnalyzeRequest, ScanConfig
 from analyzer.config import Settings
 from analyzer.core.orchestrator import Orchestrator
+from analyzer.core.severity import Confidence
 
 
 def test_rule_and_taint_same_line_merged_to_one_finding():
@@ -19,3 +20,4 @@ app.get('/users', (req, res) => {
     )
     sql_findings = [f for f in resp.findings if f.rule_id == "JS-SQL-001"]
     assert len(sql_findings) == 1
+    assert sql_findings[0].confidence == Confidence.HIGH

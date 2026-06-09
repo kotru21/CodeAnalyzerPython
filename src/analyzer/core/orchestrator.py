@@ -12,8 +12,9 @@ from analyzer.api.schemas import (
     ScanStats,
 )
 from analyzer.config import Settings
+from analyzer.core.injection_rules import INJECTION_RULE_IDS
 from analyzer.core.language_detect import detect_language
-from analyzer.core.severity import Severity
+from analyzer.core.severity import Confidence, Severity
 from analyzer.knowledge.cwe_database import CWEDatabase
 from analyzer.parsers.factory import get_parser
 from analyzer.rules.base import AnalysisContext, BaseRule, RawFinding
@@ -216,6 +217,7 @@ class Orchestrator:
             "readFileSync": "JS-PATH-001",
             "writeFile": "JS-PATH-001",
             "writeFileSync": "JS-PATH-001",
+            "fetch": "JS-SSRF-001",
         }
         for flow in flows:
             rule_id = flow_rule_map.get(flow.sink_method)
@@ -307,12 +309,18 @@ class Orchestrator:
             ctx = contexts.get(fp) or default_ctx
             snippet = rf.code_snippet or self._get_snippet(ctx, rf.line_start)
 
+            confidence = meta.confidence
+            if rf.taint_confirmed:
+                confidence = Confidence.HIGH
+            elif meta.rule_id in INJECTION_RULE_IDS:
+                confidence = Confidence.LOW
+
             enriched.append(
                 Finding(
                     rule_id=meta.rule_id,
                     title=meta.title,
                     severity=meta.severity,
-                    confidence=meta.confidence,
+                    confidence=confidence,
                     file_path=fp,
                     line_start=rf.line_start,
                     line_end=rf.line_end,
