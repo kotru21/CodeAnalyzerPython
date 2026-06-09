@@ -1031,6 +1031,58 @@
     "description": "Без пользовательского ввода в RegExp"
   },
   {
+    "test_id": "JWT-EASY-VULN-01",
+    "rule_id": "JS-JWT-001",
+    "difficulty": "easy",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "const jwt = require('jsonwebtoken');\njwt.sign({ id: 1 }, 'secret', { algorithm: 'none' });",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-347",
+    "description": "JWT algorithm none"
+  },
+  {
+    "test_id": "JWT-EASY-SAFE-01",
+    "rule_id": "JS-JWT-001",
+    "difficulty": "easy",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "const jwt = require('jsonwebtoken');\njwt.sign({ id: 1 }, 'secret', { algorithm: 'HS256' });",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "JWT algorithm HS256"
+  },
+  {
+    "test_id": "COOKIE-EASY-VULN-01",
+    "rule_id": "JS-COOKIE-001",
+    "difficulty": "easy",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "res.cookie('sid', 'abc', { httpOnly: false });",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-1004",
+    "description": "Cookie httpOnly false"
+  },
+  {
+    "test_id": "COOKIE-EASY-SAFE-01",
+    "rule_id": "JS-COOKIE-001",
+    "difficulty": "easy",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "res.cookie('sid', 'abc', { httpOnly: true });",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Cookie httpOnly true"
+  },
+  {
     "test_id": "SPECIAL-TAINT-INTERPROC-SQL",
     "rule_id": "JS-SQL-001",
     "difficulty": "hard",

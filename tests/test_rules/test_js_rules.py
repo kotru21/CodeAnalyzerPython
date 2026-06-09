@@ -612,3 +612,99 @@ class TestRegexDOSRule:
             assert len(findings) > 0, f"Expected detection for {case['id']}"
         else:
             assert len(findings) == 0, f"False positive for {case['id']}"
+
+
+JWT_CASES = [
+    {
+        "id": "jwt-algorithm-none",
+        "code": """
+const jwt = require('jsonwebtoken');
+app.post('/login', (req, res) => {
+    const token = jwt.sign({ userId: req.body.id }, 'secret', { algorithm: 'none' });
+    res.json({ token });
+});
+""",
+        "should_detect": True,
+        "rule_id": "JS-JWT-001",
+    },
+    {
+        "id": "jwt-alg-none-jsonwebtoken",
+        "code": """
+const jsonwebtoken = require('jsonwebtoken');
+const token = jsonwebtoken.sign({ id: 1 }, 'key', { alg: "none" });
+""",
+        "should_detect": True,
+        "rule_id": "JS-JWT-001",
+    },
+    {
+        "id": "jwt-safe-hs256",
+        "code": """
+const jwt = require('jsonwebtoken');
+const token = jwt.sign({ id: 1 }, 'secret', { algorithm: 'HS256' });
+""",
+        "should_detect": False,
+        "rule_id": "JS-JWT-001",
+    },
+]
+
+
+class TestJWTRule:
+    @pytest.mark.parametrize("case", JWT_CASES, ids=[c["id"] for c in JWT_CASES])
+    def test_jwt(self, case: dict):
+        ctx = make_js_context(case["code"])
+        rules = get_all_rules()
+        matching = [r for r in rules if r.meta().rule_id == case["rule_id"]]
+        assert len(matching) == 1
+        findings = matching[0].run(ctx)
+        if case["should_detect"]:
+            assert len(findings) > 0, f"Expected detection for {case['id']}"
+        else:
+            assert len(findings) == 0, f"False positive for {case['id']}"
+
+
+COOKIE_CASES = [
+    {
+        "id": "cookie-httponly-false",
+        "code": """
+app.get('/session', (req, res) => {
+    res.cookie('sessionId', req.query.id, { httpOnly: false, secure: true });
+});
+""",
+        "should_detect": True,
+        "rule_id": "JS-COOKIE-001",
+    },
+    {
+        "id": "cookie-httponly-true",
+        "code": """
+app.get('/session', (req, res) => {
+    res.cookie('sessionId', req.query.id, { httpOnly: true, secure: true });
+});
+""",
+        "should_detect": False,
+        "rule_id": "JS-COOKIE-001",
+    },
+    {
+        "id": "cookie-no-httponly-option",
+        "code": """
+app.get('/session', (req, res) => {
+    res.cookie('sessionId', req.query.id, { secure: true });
+});
+""",
+        "should_detect": False,
+        "rule_id": "JS-COOKIE-001",
+    },
+]
+
+
+class TestInsecureCookiesRule:
+    @pytest.mark.parametrize("case", COOKIE_CASES, ids=[c["id"] for c in COOKIE_CASES])
+    def test_insecure_cookies(self, case: dict):
+        ctx = make_js_context(case["code"])
+        rules = get_all_rules()
+        matching = [r for r in rules if r.meta().rule_id == case["rule_id"]]
+        assert len(matching) == 1
+        findings = matching[0].run(ctx)
+        if case["should_detect"]:
+            assert len(findings) > 0, f"Expected detection for {case['id']}"
+        else:
+            assert len(findings) == 0, f"False positive for {case['id']}"
