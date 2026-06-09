@@ -75,7 +75,7 @@ app.get('/x', (req, res) => {
             "CWE-89",
             "Same-file inter-procedural bare id к sink",
             expected_findings=[
-                {"rule_id": "JS-SQL-001", "line": 5, "cwe_id": "CWE-89"},
+                {"rule_id": "JS-SQL-001", "line": 2, "cwe_id": "CWE-89"},
             ],
         ),
         mk(

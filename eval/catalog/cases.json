@@ -75,7 +75,7 @@
     "expected_findings": [
       {
         "rule_id": "JS-SQL-001",
-        "line": 5,
+        "line": 2,
         "cwe_id": "CWE-89"
       }
     ]
