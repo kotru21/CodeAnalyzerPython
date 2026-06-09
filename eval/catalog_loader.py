@@ -18,6 +18,11 @@ def load_cases(catalog_path: Path) -> list[dict[str, Any]]:
     return data
 
 
+def load_catalog(catalog_path: Path | None = None) -> list[dict[str, Any]]:
+    path = catalog_path or (repo_root() / "eval/catalog/cases.json")
+    return load_cases(path)
+
+
 def load_rule_ids(catalog_dir: Path) -> list[str]:
     m = json.loads((catalog_dir / "rule_cwe_map.json").read_text(encoding="utf-8"))
     if not isinstance(m, dict):

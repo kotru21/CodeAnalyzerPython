@@ -3,6 +3,10 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
+from analyzer.api.schemas import AnalyzeRequest, ScanConfig
+from analyzer.config import Settings
+from analyzer.core.orchestrator import Orchestrator
+
 from eval.catalog_loader import load_rule_ids, should_skip_main
 from eval.classify import classify_outcome
 from eval.finding_match import (
@@ -19,6 +23,90 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from eval.backends.base import ScanBackend
+
+
+def run_catalog_inprocess(
+    cases: list[dict[str, Any]],
+    *,
+    settings: Settings | None = None,
+) -> list[dict[str, Any]]:
+    """Run catalog cases via Orchestrator.analyze_sync (no HTTP)."""
+    orch = Orchestrator(settings=settings or Settings(), cwe_db=None)
+    rows: list[dict[str, Any]] = []
+
+    for case in cases:
+        tid = case["test_id"]
+        if should_skip_main(case):
+            rows.append(
+                {
+                    "test_id": tid,
+                    "rule_id": case.get("rule_id"),
+                    "difficulty": case.get("difficulty"),
+                    "type": case.get("type"),
+                    "actual_findings": "—",
+                    "outcome": "SKIP",
+                    "notes": "skipped (sarif/async tag)",
+                    "multi_case": bool(case.get("expected_rule_ids")),
+                }
+            )
+            continue
+
+        scan_config = ScanConfig(**(case.get("config") or {"enable_taint": True}))
+        request = AnalyzeRequest(
+            source_code=case["source_code"],
+            file_path=case["file_path"],
+            config=scan_config,
+        )
+
+        analyzer_err: str | None = None
+        analyzer_data: dict[str, Any] | None = None
+        try:
+            response = orch.analyze_sync(request)
+            analyzer_data = response.model_dump(mode="json")
+        except Exception as e:  # noqa: BLE001
+            analyzer_err = str(e)
+
+        finding_outcomes: list[str] | None = None
+        if analyzer_data is not None:
+            if case.get("expected_findings") is not None:
+                finding_outcomes = classify_case_findings(case, analyzer_data)
+                outcome = primary_outcome(finding_outcomes)
+            else:
+                outcome = classify_outcome(case, analyzer_data)
+            stats = analyzer_data.get("stats") or {}
+            total = stats.get(
+                "total_findings", len(analyzer_data.get("findings") or [])
+            )
+        else:
+            outcome = "ERROR"
+            total = "—"
+
+        notes = ""
+        if analyzer_err:
+            notes = analyzer_err[:200]
+        nec = case.get("notes_expected_count")
+        if nec is not None and isinstance(total, int):
+            notes = (notes + f" expected_count~{nec} actual={total}").strip()
+        if finding_outcomes:
+            notes = (
+                notes + f" finding_outcomes={','.join(finding_outcomes)}"
+            ).strip()
+
+        row: dict[str, Any] = {
+            "test_id": tid,
+            "rule_id": case.get("rule_id"),
+            "difficulty": case.get("difficulty"),
+            "type": case.get("type"),
+            "actual_findings": total,
+            "outcome": outcome,
+            "notes": notes,
+            "multi_case": bool(case.get("expected_rule_ids")),
+        }
+        if finding_outcomes is not None:
+            row["finding_outcomes"] = finding_outcomes
+        rows.append(row)
+
+    return rows
 
 
 def _raw_basename(test_id: str, backend_name: str) -> str:
