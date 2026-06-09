@@ -22,6 +22,18 @@ from eval.corpus_paper_runner import run_paper_eval  # noqa: E402
 from eval.rule_map import load_rule_map  # noqa: E402
 
 
+def _agreement_fn_count(summary: dict) -> int | None:
+    """False negatives for line-level Semgrep agreement (if present in summary)."""
+    agreement = summary.get("agreement_summary")
+    if isinstance(agreement, dict):
+        fn = agreement.get("FN")
+        if isinstance(fn, int):
+            return fn
+    if "semgrep_only_lines" in summary:
+        return int(summary["semgrep_only_lines"])
+    return None
+
+
 def main() -> int:
     root = repo_root()
     p = argparse.ArgumentParser(
@@ -87,6 +99,15 @@ def main() -> int:
         metavar="SEC",
         help="Subprocess timeout for Semgrep",
     )
+    p.add_argument(
+        "--fail-on-fn",
+        action="store_true",
+        help=(
+            "Exit 3 when line-agreement false negatives are > 0. Uses "
+            "agreement_summary.FN when present, otherwise semgrep_only_lines "
+            "(Semgrep lines not matched by the analyzer)."
+        ),
+    )
     args = p.parse_args()
 
     corpus = args.corpus.resolve()
@@ -129,6 +150,21 @@ def main() -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
     print(f"Wrote {out_path}")
+
+    if args.fail_on_fn:
+        fn_count = _agreement_fn_count(summary)
+        if fn_count is None:
+            print(
+                "--fail-on-fn: no agreement FN field in summary; skipping gate",
+                file=sys.stderr,
+            )
+        elif fn_count > 0:
+            print(
+                f"--fail-on-fn: agreement FN count {fn_count} > 0",
+                file=sys.stderr,
+            )
+            return 3
+
     return 0
 
 
