@@ -19,6 +19,7 @@ from analyzer.knowledge.cwe_database import CWEDatabase
 from analyzer.parsers.factory import get_parser
 from analyzer.rules.base import AnalysisContext, BaseRule, RawFinding
 from analyzer.rules.registry import get_rules_for_language
+from analyzer.taint.module_graph import build_per_file_fn_index
 from analyzer.taint.tracker import TaintFlow, TaintTracker, merge_fn_index_from_roots
 from analyzer.utils.hash import md5_fingerprint
 
@@ -147,6 +148,9 @@ class Orchestrator:
             rules = [r for r in rules if r.meta().rule_id in allowed]
 
         merged_idx = merge_fn_index_from_roots([c.root_node for c in contexts])
+        per_file_fn_index = build_per_file_fn_index(
+            contexts, merged_idx, request.files
+        )
         raw_findings: list[RawFinding] = []
         failed_rules: list[str] = []
 
@@ -166,7 +170,9 @@ class Orchestrator:
                 if deadline is not None and time.monotonic() > deadline:
                     time_budget_exceeded = True
                     break
-                flows = self._taint_tracker.analyze(ctx, fn_index=merged_idx)
+                flows = self._taint_tracker.analyze(
+                    ctx, fn_index=per_file_fn_index[ctx.file_path]
+                )
                 raw_findings.extend(
                     self._taint_to_findings(flows, file_path=ctx.file_path)
                 )
