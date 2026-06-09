@@ -36,6 +36,7 @@ class RawFinding:
     code_snippet: str = ""
     extra_info: str = ""
     file_path: str | None = None
+    taint_confirmed: bool = False
 
 
 class BaseRule(ABC):
