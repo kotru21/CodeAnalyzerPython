@@ -12,6 +12,9 @@ from analyzer.taint.sanitizers import (
 from analyzer.taint.source_match import find_matching_source
 from analyzer.taint.sources_sinks import (
     COMMAND_SINK_METHOD_NAMES,
+    HTTP_METHOD_SINKS,
+    NON_HTTP_RECEIVER_NAMES,
+    NOSQL_SINK_METHODS,
     SINK_IDENTIFIERS,
     SINK_MEMBER_PATTERNS,
     SQL_SINK_METHOD_NAMES,
@@ -548,7 +551,17 @@ class TaintTracker:
             norm = _normalize_optional_access(full_text)
             if full_text in SINK_MEMBER_PATTERNS or norm in SINK_MEMBER_PATTERNS:
                 return True
-            return method in SQL_SINK_METHOD_NAMES
+            if method in SQL_SINK_METHOD_NAMES:
+                return True
+            if method in NOSQL_SINK_METHODS:
+                return True
+            if method in HTTP_METHOD_SINKS:
+                obj = func_node.child_by_field_name("object")
+                if obj is not None and obj.type == "identifier":
+                    obj_name = obj.text.decode() if obj.text else ""
+                    if obj_name in NON_HTTP_RECEIVER_NAMES:
+                        return False
+                return True
         return False
 
     @staticmethod

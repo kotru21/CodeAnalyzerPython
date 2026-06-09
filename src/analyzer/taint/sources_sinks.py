@@ -112,3 +112,36 @@ SQL_SINK_METHOD_NAMES: frozenset[str] = frozenset(
 )
 
 COMMAND_SINK_METHOD_NAMES: frozenset[str] = frozenset(s.pattern for s in COMMAND_SINKS)
+
+NOSQL_SINK_METHODS: frozenset[str] = frozenset({
+    "find",
+    "findOne",
+    "findOneAndUpdate",
+    "updateOne",
+    "deleteOne",
+    "aggregate",
+})
+
+HTTP_METHOD_SINKS: frozenset[str] = frozenset({
+    "get",
+    "post",
+    "put",
+    "patch",
+    "delete",
+    "head",
+    "request",
+})
+
+# Receivers whose `.get`/`.post` are not outbound HTTP (e.g. db.get, app.get routes).
+NON_HTTP_RECEIVER_NAMES: frozenset[str] = frozenset({
+    "app",
+    "router",
+    "server",
+    "db",
+    "req",
+    "res",
+    "cache",
+    "redis",
+    "store",
+    "session",
+})

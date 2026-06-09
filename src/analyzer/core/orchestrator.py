@@ -217,7 +217,12 @@ class Orchestrator:
             "readFileSync": "JS-PATH-001",
             "writeFile": "JS-PATH-001",
             "writeFileSync": "JS-PATH-001",
+            "find": "JS-NOSQL-001",
+            "findOne": "JS-NOSQL-001",
             "fetch": "JS-SSRF-001",
+            "get": "JS-SSRF-001",
+            "post": "JS-SSRF-001",
+            "request": "JS-SSRF-001",
         }
         for flow in flows:
             rule_id = flow_rule_map.get(flow.sink_method)
