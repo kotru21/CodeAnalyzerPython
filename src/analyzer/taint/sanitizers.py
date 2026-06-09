@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from analyzer.taint.sources_sinks import ALL_SINKS
+
 
 @dataclass(frozen=True)
 class Sanitizer:
@@ -24,6 +26,12 @@ SANITIZERS: list[Sanitizer] = [
 
 SANITIZER_NAMES: frozenset[str] = frozenset(s.pattern.split(".")[-1] for s in SANITIZERS)
 
+SANITIZER_BY_PATTERN: dict[str, str] = {s.pattern: s.category for s in SANITIZERS}
+
+SINK_CATEGORY_BY_METHOD: dict[str, str] = {
+    s.pattern.split(".")[-1]: s.category for s in ALL_SINKS
+}
+
 PARAMETERIZED_PATTERNS: frozenset[str] = frozenset(
     {
         "$1",
@@ -37,7 +45,44 @@ PARAMETERIZED_PATTERNS: frozenset[str] = frozenset(
 
 
 def is_sanitizer_call(func_text: str) -> bool:
-    return any(sanitizer.pattern in func_text for sanitizer in SANITIZERS)
+    return bool(sanitizer_categories_for_call(func_text))
+
+
+def sanitizer_categories_for_call(func_text: str) -> frozenset[str]:
+    cats: set[str] = set()
+    for pattern, category in SANITIZER_BY_PATTERN.items():
+        if pattern in func_text:
+            cats.add(category)
+    return frozenset(cats)
+
+
+def _categories_cover_sink_category(cats: frozenset[str], sink_category: str) -> bool:
+    if "generic" in cats:
+        return True
+    if sink_category in cats:
+        return True
+    if "type_cast" in cats and sink_category == "sql":
+        return True
+    return False
+
+
+def sanitizer_applies_to_sink(func_text: str, sink_method: str) -> bool:
+    cats = sanitizer_categories_for_call(func_text)
+    if not cats:
+        return False
+    sink_category = SINK_CATEGORY_BY_METHOD.get(sink_method)
+    if sink_category is None:
+        return False
+    return _categories_cover_sink_category(cats, sink_category)
+
+
+def sanitizer_categories_cover_sink(
+    sanitizer_cats: frozenset[str], sink_method: str
+) -> bool:
+    sink_category = SINK_CATEGORY_BY_METHOD.get(sink_method)
+    if sink_category is None:
+        return False
+    return _categories_cover_sink_category(sanitizer_cats, sink_category)
 
 
 def is_parameterized_query(query_text: str) -> bool:

@@ -4,7 +4,11 @@ from tree_sitter import Node
 
 from analyzer.rules.base import AnalysisContext
 from analyzer.taint.patterns import bind_pattern_from_source
-from analyzer.taint.sanitizers import SANITIZER_NAMES, is_parameterized_query
+from analyzer.taint.sanitizers import (
+    is_parameterized_query,
+    sanitizer_categories_cover_sink,
+    sanitizer_categories_for_call,
+)
 from analyzer.taint.source_match import find_matching_source
 from analyzer.taint.sources_sinks import (
     COMMAND_SINK_METHOD_NAMES,
@@ -139,7 +143,7 @@ class TaintTracker:
         fn_index: dict[str, tuple[list[str], Node]] | None = None,
     ) -> list[TaintFlow]:
         tainted_vars: dict[str, str] = {}
-        sanitized_vars: set[str] = set()
+        sanitized_vars: dict[str, frozenset[str]] = {}
         flows: list[TaintFlow] = []
         idx = fn_index if fn_index is not None else _index_functions(context.root_node)
 
@@ -158,7 +162,7 @@ class TaintTracker:
         self,
         node: Node,
         tainted: dict[str, str],
-        sanitized: set[str],
+        sanitized: dict[str, frozenset[str]],
         flows: list[TaintFlow],
         ctx: AnalysisContext,
         fn_index: dict[str, tuple[list[str], Node]],
@@ -187,7 +191,7 @@ class TaintTracker:
         self,
         node: Node,
         tainted: dict[str, str],
-        sanitized: set[str],
+        sanitized: dict[str, frozenset[str]],
         flows: list[TaintFlow],
         ctx: AnalysisContext,
         fn_index: dict[str, tuple[list[str], Node]],
@@ -207,11 +211,19 @@ class TaintTracker:
             return
         arg_nodes = _positional_arguments(args_node)
         bindings: dict[str, str] = {}
+        san_child = dict(sanitized)
         for i, pname in enumerate(params):
             if i >= len(arg_nodes):
                 break
             arg = arg_nodes[i]
-            if self._is_sanitizer_call(arg):
+            sanitizer_cats = self._is_sanitizer_call(arg)
+            if sanitizer_cats:
+                san_child[pname] = sanitizer_cats
+                inner = self._sanitizer_first_arg(arg)
+                if inner is not None:
+                    src = self._find_tainted_in_arg(inner, tainted, sanitized)
+                    if src:
+                        bindings[pname] = src
                 continue
             src = self._find_tainted_in_arg(arg, tainted, sanitized)
             if src:
@@ -219,7 +231,6 @@ class TaintTracker:
         if not bindings:
             return
         merged = {**tainted, **bindings}
-        san_child = set(sanitized)
         self._collect_taint_info(
             body, merged, san_child, flows, ctx, fn_index, depth + 1
         )
@@ -228,7 +239,7 @@ class TaintTracker:
         self,
         call_node: Node,
         tainted: dict[str, str],
-        sanitized: set[str],
+        sanitized: dict[str, frozenset[str]],
         flows: list[TaintFlow],
         ctx: AnalysisContext,
         fn_index: dict[str, tuple[list[str], Node]],
@@ -246,17 +257,24 @@ class TaintTracker:
         params, body = fn_index[fname]
         arg_nodes = _positional_arguments(args_node)
         bindings: dict[str, str] = {}
+        san_child = dict(sanitized)
         for i, pname in enumerate(params):
             if i >= len(arg_nodes):
                 break
             arg = arg_nodes[i]
-            if self._is_sanitizer_call(arg):
+            sanitizer_cats = self._is_sanitizer_call(arg)
+            if sanitizer_cats:
+                san_child[pname] = sanitizer_cats
+                inner = self._sanitizer_first_arg(arg)
+                if inner is not None:
+                    src = self._find_tainted_in_arg(inner, tainted, sanitized)
+                    if src:
+                        bindings[pname] = src
                 continue
             src = self._find_tainted_in_arg(arg, tainted, sanitized)
             if src:
                 bindings[pname] = src
         merged = {**tainted, **bindings}
-        san_child = set(sanitized)
         self._collect_taint_info(
             body, merged, san_child, flows, ctx, fn_index, depth + 1
         )
@@ -264,7 +282,7 @@ class TaintTracker:
 
     @staticmethod
     def _return_expression_taint(
-        body: Node, tainted: dict[str, str], sanitized: set[str]
+        body: Node, tainted: dict[str, str], sanitized: dict[str, frozenset[str]]
     ) -> str | None:
         def visit(n: Node) -> str | None:
             if n.type == "return_statement":
@@ -292,16 +310,19 @@ class TaintTracker:
 
     @staticmethod
     def _find_tainted_in_arg_static(
-        node: Node, tainted: dict[str, str], sanitized: set[str]
+        node: Node,
+        tainted: dict[str, str],
+        sanitized: dict[str, frozenset[str]],
+        sink_method: str | None = None,
     ) -> str | None:
         tr = TaintTracker()
-        return tr._find_tainted_in_arg(node, tainted, sanitized)
+        return tr._find_tainted_in_arg(node, tainted, sanitized, sink_method)
 
     def _handle_var_decl(
         self,
         node: Node,
         tainted: dict[str, str],
-        sanitized: set[str],
+        sanitized: dict[str, frozenset[str]],
         flows: list[TaintFlow],
         ctx: AnalysisContext,
         fn_index: dict[str, tuple[list[str], Node]],
@@ -315,8 +336,14 @@ class TaintTracker:
         if not var_name:
             return
 
-        if self._is_sanitizer_call(value_node):
-            sanitized.add(var_name)
+        sanitizer_cats = self._is_sanitizer_call(value_node)
+        if sanitizer_cats:
+            sanitized[var_name] = sanitizer_cats
+            inner = self._sanitizer_first_arg(value_node)
+            if inner is not None:
+                src = self._find_tainted_in_arg(inner, tainted, sanitized)
+                if src:
+                    tainted[var_name] = src
             return
 
         if value_node.type == "call_expression":
@@ -339,7 +366,7 @@ class TaintTracker:
         self,
         node: Node,
         tainted: dict[str, str],
-        sanitized: set[str],
+        sanitized: dict[str, frozenset[str]],
         flows: list[TaintFlow],
         ctx: AnalysisContext,
         fn_index: dict[str, tuple[list[str], Node]],
@@ -353,8 +380,14 @@ class TaintTracker:
         if not var_name:
             return
 
-        if self._is_sanitizer_call(right):
-            sanitized.add(var_name)
+        sanitizer_cats = self._is_sanitizer_call(right)
+        if sanitizer_cats:
+            sanitized[var_name] = sanitizer_cats
+            inner = self._sanitizer_first_arg(right)
+            if inner is not None:
+                src = self._find_tainted_in_arg(inner, tainted, sanitized)
+                if src:
+                    tainted[var_name] = src
             return
 
         if right.type == "call_expression":
@@ -416,7 +449,7 @@ class TaintTracker:
         self,
         node: Node,
         tainted: dict[str, str],
-        sanitized: set[str],
+        sanitized: dict[str, frozenset[str]],
         flows: list[TaintFlow],
         ctx: AnalysisContext,
     ) -> None:
@@ -438,7 +471,7 @@ class TaintTracker:
             lit = _string_literal_text(first)
             if lit is not None and is_parameterized_query(lit):
                 taint_in_first = self._find_tainted_in_arg(
-                    first, tainted, sanitized
+                    first, tainted, sanitized, method
                 )
                 if taint_in_first and self._should_report_flow(
                     taint_in_first, method
@@ -455,7 +488,7 @@ class TaintTracker:
                 return
 
         for arg in pos_args:
-            taint_source = self._find_tainted_in_arg(arg, tainted, sanitized)
+            taint_source = self._find_tainted_in_arg(arg, tainted, sanitized, method)
             if taint_source and self._should_report_flow(taint_source, method):
                 line = node.start_point[0] + 1
                 flows.append(
@@ -469,13 +502,18 @@ class TaintTracker:
                 return
 
     def _find_tainted_in_arg(
-        self, node: Node, tainted: dict[str, str], sanitized: set[str]
+        self,
+        node: Node,
+        tainted: dict[str, str],
+        sanitized: dict[str, frozenset[str]],
+        sink_method: str | None = None,
     ) -> str | None:
         text = node.text.decode() if node.text else ""
 
         if node.type == "identifier":
-            if text in sanitized:
-                return None
+            if text in sanitized and sink_method is not None:
+                if sanitizer_categories_cover_sink(sanitized[text], sink_method):
+                    return None
             if text in tainted:
                 return tainted[text]
 
@@ -485,11 +523,21 @@ class TaintTracker:
                 return match
 
         for child in node.children:
-            result = self._find_tainted_in_arg(child, tainted, sanitized)
+            result = self._find_tainted_in_arg(
+                child, tainted, sanitized, sink_method
+            )
             if result:
                 return result
 
         return None
+
+    @staticmethod
+    def _sanitizer_first_arg(call_node: Node) -> Node | None:
+        args = call_node.child_by_field_name("arguments")
+        if args is None:
+            return None
+        pos = _positional_arguments(args)
+        return pos[0] if pos else None
 
     @staticmethod
     def _is_known_sink(func_node: Node, method: str) -> bool:
@@ -504,15 +552,15 @@ class TaintTracker:
         return False
 
     @staticmethod
-    def _is_sanitizer_call(node: Node) -> bool:
+    def _is_sanitizer_call(node: Node) -> frozenset[str] | None:
         if node.type != "call_expression":
-            return False
+            return None
         func = node.child_by_field_name("function")
         if func is None:
-            return False
+            return None
         func_text = func.text.decode() if func.text else ""
-        func_name = func_text.split(".")[-1] if "." in func_text else func_text
-        return func_name in SANITIZER_NAMES
+        cats = sanitizer_categories_for_call(func_text)
+        return cats if cats else None
 
     @staticmethod
     def _get_sink_method(func_node: Node) -> str:

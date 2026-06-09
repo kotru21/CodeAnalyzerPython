@@ -63,7 +63,7 @@ app.get('/x', (req, res) => {
         flows = TaintTracker().analyze(make_js_context(code))
         assert_any_flow(flows, sink_method="exec", source_substr="req.cookies")
 
-    def test_sanitizer__negative__encode_uri_then_query(self) -> None:
+    def test_sanitizer__positive__encode_uri_does_not_sanitize_sql(self) -> None:
         code = """
 app.get('/x', (req, res) => {
     const x = encodeURIComponent(req.body.name);
@@ -71,7 +71,7 @@ app.get('/x', (req, res) => {
 });
 """
         flows = TaintTracker().analyze(make_js_context(code))
-        assert_no_flow_with_sink(flows, "query")
+        assert_any_flow(flows, sink_method="query", source_substr="req.body")
 
     def test_pg_placeholder__negative__taint_only_values_array(self) -> None:
         code = """
