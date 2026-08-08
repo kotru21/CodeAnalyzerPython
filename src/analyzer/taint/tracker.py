@@ -23,9 +23,7 @@ from analyzer.taint.sources_sinks import (
     is_weak_source,
 )
 
-_FUNCTION_NODE_TYPES = frozenset(
-    {"function_declaration", "arrow_function", "function_expression"}
-)
+_FUNCTION_NODE_TYPES = frozenset({"function_declaration", "arrow_function", "function_expression"})
 
 MAX_INTERPROC_DEPTH = 5
 
@@ -230,41 +228,27 @@ class TaintTracker:
             cons = node.child_by_field_name("consequence")
             alt = node.child_by_field_name("alternative")
             if cond is not None:
-                self._collect_taint_info(
-                    cond, tainted, sanitized, flows, ctx, fn_index, depth
-                )
+                self._collect_taint_info(cond, tainted, sanitized, flows, ctx, fn_index, depth)
             then_t, then_s = dict(tainted), dict(sanitized)
             if cons is not None:
-                self._collect_taint_info(
-                    cons, then_t, then_s, flows, ctx, fn_index, depth
-                )
+                self._collect_taint_info(cons, then_t, then_s, flows, ctx, fn_index, depth)
             else_t, else_s = dict(tainted), dict(sanitized)
             if alt is not None:
-                self._collect_taint_info(
-                    alt, else_t, else_s, flows, ctx, fn_index, depth
-                )
+                self._collect_taint_info(alt, else_t, else_s, flows, ctx, fn_index, depth)
             self._join_scopes(tainted, sanitized, then_t, then_s, else_t, else_s, alt is None)
             return
 
         if node.type == "variable_declarator":
-            self._handle_var_decl(
-                node, tainted, sanitized, flows, ctx, fn_index, depth
-            )
+            self._handle_var_decl(node, tainted, sanitized, flows, ctx, fn_index, depth)
         elif node.type == "assignment_expression":
-            self._handle_assignment(
-                node, tainted, sanitized, flows, ctx, fn_index, depth
-            )
+            self._handle_assignment(node, tainted, sanitized, flows, ctx, fn_index, depth)
             self._check_assignment_sink(node, tainted, sanitized, flows, ctx)
         elif node.type == "call_expression":
             self._check_sink(node, tainted, sanitized, flows, ctx)
-            self._analyze_callee_interproc(
-                node, tainted, sanitized, flows, ctx, fn_index, depth
-            )
+            self._analyze_callee_interproc(node, tainted, sanitized, flows, ctx, fn_index, depth)
 
         for child in node.children:
-            self._collect_taint_info(
-                child, tainted, sanitized, flows, ctx, fn_index, depth
-            )
+            self._collect_taint_info(child, tainted, sanitized, flows, ctx, fn_index, depth)
 
     @staticmethod
     def _join_scopes(
@@ -372,9 +356,7 @@ class TaintTracker:
             return self._return_expression_taint(body, dict(bindings), san_child)
         self._interproc_cache.add(cache_key)
         # Do not inherit ambient outer taint into the callee.
-        self._collect_taint_info(
-            body, dict(bindings), san_child, flows, ctx, fn_index, depth + 1
-        )
+        self._collect_taint_info(body, dict(bindings), san_child, flows, ctx, fn_index, depth + 1)
         return self._return_expression_taint(body, dict(bindings), san_child)
 
     def _interproc_call_return_source(
@@ -645,14 +627,9 @@ class TaintTracker:
             return
 
         pos_args = _positional_arguments(args)
-        if (
-            len(pos_args) >= 2
-            and method in _SQL_PLACEHOLDER_MULTIARG_METHODS
-        ):
+        if len(pos_args) >= 2 and method in _SQL_PLACEHOLDER_MULTIARG_METHODS:
             first = pos_args[0]
-            taint_in_first = self._find_tainted_in_arg(
-                first, tainted, sanitized, method
-            )
+            taint_in_first = self._find_tainted_in_arg(first, tainted, sanitized, method)
             lit = _string_literal_text(first)
             # Parameterized / bound style: SQL text arg not tainted; values may be.
             if taint_in_first is None and (
@@ -660,9 +637,7 @@ class TaintTracker:
             ):
                 return
             if lit is not None and is_parameterized_query(lit):
-                if taint_in_first and self._should_report_flow(
-                    taint_in_first, method
-                ):
+                if taint_in_first and self._should_report_flow(taint_in_first, method):
                     line = node.start_point[0] + 1
                     flows.append(
                         TaintFlow(
@@ -713,9 +688,7 @@ class TaintTracker:
                 return match
 
         for child in node.children:
-            result = self._find_tainted_in_arg(
-                child, tainted, sanitized, sink_method
-            )
+            result = self._find_tainted_in_arg(child, tainted, sanitized, sink_method)
             if result:
                 return result
 

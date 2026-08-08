@@ -38,9 +38,7 @@ def classify_outcome(case: dict[str, Any], response: dict[str, Any] | None) -> O
     expected_rules = case.get("expected_rule_ids")
     if expected_rules:
         for rid in expected_rules:
-            if not any(
-                isinstance(f, dict) and f.get("rule_id") == rid for f in findings
-            ):
+            if not any(isinstance(f, dict) and f.get("rule_id") == rid for f in findings):
                 return "FN"
         return "TP"
 
@@ -49,9 +47,7 @@ def classify_outcome(case: dict[str, Any], response: dict[str, Any] | None) -> O
         return "ERROR"
     expected_cwe = case.get("expected_cwe")
     matched = any(
-        _finding_matches_rule(f, rule_id, expected_cwe)
-        for f in findings
-        if isinstance(f, dict)
+        _finding_matches_rule(f, rule_id, expected_cwe) for f in findings if isinstance(f, dict)
     )
     if matched:
         return "TP"
@@ -66,8 +62,6 @@ def aggregate_by_rule(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
         oc = row.get("outcome")
         if not isinstance(rid, str) or oc not in ("TP", "FP", "TN", "FN", "ERROR"):
             continue
-        bucket = out.setdefault(
-            rid, {"TP": 0, "FP": 0, "TN": 0, "FN": 0, "ERROR": 0}
-        )
+        bucket = out.setdefault(rid, {"TP": 0, "FP": 0, "TN": 0, "FN": 0, "ERROR": 0})
         bucket[oc] += 1
     return out

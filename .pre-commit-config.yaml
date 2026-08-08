@@ -1,0 +1,29 @@
+# Mirrors CI jobs quality + test. Catalog eval and Docker smoke stay CI-only.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.2
+    hooks:
+      - id: ruff
+        files: ^(src|tests|eval)/
+      - id: ruff-format
+        files: ^(src|tests|eval)/
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: python -m mypy src/analyzer
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: pip-audit
+        name: pip-audit
+        entry: python -m pip_audit
+        language: system
+        pass_filenames: false
+      - id: pytest-cov
+        name: pytest with coverage ratchet
+        entry: python -m pytest tests/ -q --cov=src/analyzer --cov-report=term-missing
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]

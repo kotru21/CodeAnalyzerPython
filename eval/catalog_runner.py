@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING, Any
 from analyzer.api.schemas import AnalyzeRequest, ScanConfig
 from analyzer.config import Settings
 from analyzer.core.orchestrator import Orchestrator
-
+from eval.backends.semgrep_batch import batch_scan_semgrep
+from eval.backends.semgrep_case import SemgrepCaseBackend
 from eval.catalog_loader import load_rule_ids, should_skip_main
 from eval.classify import classify_outcome
 from eval.finding_match import (
@@ -15,9 +16,6 @@ from eval.finding_match import (
     primary_outcome,
 )
 from eval.report_md import render_report
-
-from eval.backends.semgrep_batch import batch_scan_semgrep
-from eval.backends.semgrep_case import SemgrepCaseBackend
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -74,9 +72,7 @@ def run_catalog_inprocess(
             else:
                 outcome = classify_outcome(case, analyzer_data)
             stats = analyzer_data.get("stats") or {}
-            total = stats.get(
-                "total_findings", len(analyzer_data.get("findings") or [])
-            )
+            total = stats.get("total_findings", len(analyzer_data.get("findings") or []))
         else:
             outcome = "ERROR"
             total = "—"
@@ -88,9 +84,7 @@ def run_catalog_inprocess(
         if nec is not None and isinstance(total, int):
             notes = (notes + f" expected_count~{nec} actual={total}").strip()
         if finding_outcomes:
-            notes = (
-                notes + f" finding_outcomes={','.join(finding_outcomes)}"
-            ).strip()
+            notes = (notes + f" finding_outcomes={','.join(finding_outcomes)}").strip()
 
         row: dict[str, Any] = {
             "test_id": tid,
@@ -213,9 +207,7 @@ def run_catalog(
                 else:
                     outcome = classify_outcome(case, analyzer_data)
                 stats = analyzer_data.get("stats") or {}
-                total = stats.get(
-                    "total_findings", len(analyzer_data.get("findings") or [])
-                )
+                total = stats.get("total_findings", len(analyzer_data.get("findings") or []))
             else:
                 outcome = "ERROR"
                 total = "—"
@@ -226,9 +218,7 @@ def run_catalog(
             if nec is not None and isinstance(total, int):
                 notes = (notes + f" expected_count~{nec} actual={total}").strip()
             if finding_outcomes:
-                notes = (
-                    notes + f" finding_outcomes={','.join(finding_outcomes)}"
-                ).strip()
+                notes = (notes + f" finding_outcomes={','.join(finding_outcomes)}").strip()
         else:
             outcome = "ERROR"
             total = "—"
@@ -251,9 +241,7 @@ def run_catalog(
         rows.append(row)
 
     if write_report and out_dir is not None and catalog_dir is not None:
-        metric_rows = expand_rows_for_metrics(
-            [r for r in rows if r.get("outcome") != "SKIP"]
-        )
+        metric_rows = expand_rows_for_metrics([r for r in rows if r.get("outcome") != "SKIP"])
         rule_ids = load_rule_ids(catalog_dir)
         md = render_report(metric_rows, rule_ids)
         (out_dir / "report.md").write_text(md, encoding="utf-8")

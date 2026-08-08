@@ -53,9 +53,7 @@ class SemgrepCaseBackend:
                 fname = _safe_basename(str(case.get("file_path") or "snippet.js"))
                 fpath = root / fname
                 fpath.write_text(case.get("source_code") or "", encoding="utf-8")
-                raw = run_semgrep_json_configs(
-                    existing, root, timeout_sec=self._timeout_sec
-                )
+                raw = run_semgrep_json_configs(existing, root, timeout_sec=self._timeout_sec)
         except (OSError, RuntimeError, FileNotFoundError) as e:
             return BackendScanResult(
                 ok=False,

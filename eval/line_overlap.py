@@ -61,7 +61,7 @@ def greedy_match_lines(
     *,
     line_slop: int,
 ) -> tuple[list[list[int]], list[int], list[int]]:
-    """Greedy pairing: for each analyzer line in order, take smallest unmatched semgrep line within slop."""
+    """Greedy pairing: for each analyzer line, take smallest unmatched semgrep line within slop."""
     matched: list[list[int]] = []
     used_sem: set[int] = set()
     for a in analyzer_lines:

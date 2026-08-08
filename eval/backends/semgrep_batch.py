@@ -44,9 +44,7 @@ def batch_scan_semgrep(
                 tid = str(case["test_id"])
                 path = root / f"{tid}{_suffix_for_case(case)}"
                 path.write_text(case.get("source_code") or "", encoding="utf-8")
-            raw = run_semgrep_json_configs(
-                existing, root, timeout_sec=timeout_sec
-            )
+            raw = run_semgrep_json_configs(existing, root, timeout_sec=timeout_sec)
     except (OSError, RuntimeError, FileNotFoundError) as e:
         err_res = BackendScanResult(
             ok=False,

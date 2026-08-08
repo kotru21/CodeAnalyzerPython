@@ -15,12 +15,8 @@ if TYPE_CHECKING:
     from analyzer.rules.base import AnalysisContext
 
 _REQUIRE_RE = re.compile(r"""require\(\s*['"]([^'"]+)['"]\s*\)""")
-_IMPORT_RE = re.compile(
-    r"""(?:from\s+['"]([^'"]+)['"]|import\s+['"]([^'"]+)['"])"""
-)
-_EXPORT_FROM_RE = re.compile(
-    r"""export\s+(?:\*|\{[^}]+\})\s+from\s+['"]([^'"]+)['"]"""
-)
+_IMPORT_RE = re.compile(r"""(?:from\s+['"]([^'"]+)['"]|import\s+['"]([^'"]+)['"])""")
+_EXPORT_FROM_RE = re.compile(r"""export\s+(?:\*|\{[^}]+\})\s+from\s+['"]([^'"]+)['"]""")
 
 
 def parse_relative_imports(source: str) -> list[str]:
@@ -284,20 +280,15 @@ def build_per_file_fn_index(
     """Per consumer file: local fn_index plus resolved require/import exports."""
     by_path = {ctx.file_path: ctx for ctx in contexts}
     file_indices = {
-        path: merge_fn_index_from_roots([ctx.root_node])
-        for path, ctx in by_path.items()
+        path: merge_fn_index_from_roots([ctx.root_node]) for path, ctx in by_path.items()
     }
-    file_exports = {
-        path: exported_bindings(ctx.root_node) for path, ctx in by_path.items()
-    }
+    file_exports = {path: exported_bindings(ctx.root_node) for path, ctx in by_path.items()}
 
     result: dict[str, dict[str, tuple[list[str], Node]]] = {}
     for ctx in contexts:
         idx = dict(file_indices[ctx.file_path])
         for rel in parse_relative_imports(ctx.source_code):
-            dep_path = _match_bundle_path(
-                files, ctx.file_path, rel, tsconfig_paths=tsconfig_paths
-            )
+            dep_path = _match_bundle_path(files, ctx.file_path, rel, tsconfig_paths=tsconfig_paths)
             if dep_path is None:
                 continue
             dep_ctx = by_path.get(dep_path)
@@ -308,9 +299,7 @@ def build_per_file_fn_index(
             for re_rel in parse_relative_imports(dep_ctx.source_code):
                 if "export" not in dep_ctx.source_code:
                     break
-                re_path = _match_bundle_path(
-                    files, dep_path, re_rel, tsconfig_paths=tsconfig_paths
-                )
+                re_path = _match_bundle_path(files, dep_path, re_rel, tsconfig_paths=tsconfig_paths)
                 if re_path is None or re_path not in file_exports:
                     continue
                 for en, fn in file_exports[re_path].items():

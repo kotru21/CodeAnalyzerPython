@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-
 from eval.dataset_materialize import materialize_dataset_csv
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class _FakeResponse:

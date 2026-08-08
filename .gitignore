@@ -21,6 +21,10 @@ htmlcov/
 
 .cursor/
 
+# Local design/plan docs (brainstorming); keep out of git
+docs/superpowers/specs/
+docs/superpowers/plans/
+
 eval/results/*.json
 eval/results/report.md
 eval/results/raw/

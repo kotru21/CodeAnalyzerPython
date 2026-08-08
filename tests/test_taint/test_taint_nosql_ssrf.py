@@ -90,6 +90,4 @@ def test_axios_delete_maps_to_ssrf_rule() -> None:
     resp = orch.analyze_bundle_sync(
         AnalyzeBundleRequest(files={"app.js": code}, config=ScanConfig(enable_taint=True))
     )
-    assert any(
-        f.rule_id == "JS-SSRF-001" and f.confidence.value == "high" for f in resp.findings
-    )
+    assert any(f.rule_id == "JS-SSRF-001" and f.confidence.value == "high" for f in resp.findings)

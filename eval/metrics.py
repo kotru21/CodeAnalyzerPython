@@ -4,11 +4,7 @@ from __future__ import annotations
 def precision_recall_f1(tp: int, fp: int, fn: int) -> tuple[float, float, float]:
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
     recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-    f1 = (
-        0.0
-        if precision + recall == 0
-        else 2 * precision * recall / (precision + recall)
-    )
+    f1 = 0.0 if precision + recall == 0 else 2 * precision * recall / (precision + recall)
     return precision, recall, f1
 
 

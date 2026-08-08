@@ -78,9 +78,7 @@ class Orchestrator:
     def __init__(self, settings: Settings, cwe_db: CWEDatabase | None = None) -> None:
         self._settings = settings
         self._cwe_db = cwe_db
-        self._taint_tracker = TaintTracker(
-            sql_sink_allowlist=settings.sql_sink_allowlist
-        )
+        self._taint_tracker = TaintTracker(sql_sink_allowlist=settings.sql_sink_allowlist)
 
     def analyze_sync(self, request: AnalyzeRequest) -> AnalyzeResponse:
         start = time.monotonic()
@@ -112,9 +110,7 @@ class Orchestrator:
         taint_ran = False
         if request.config.enable_taint and not time_budget_exceeded:
             taint_flows = self._taint_tracker.analyze(context)
-            raw_findings.extend(
-                self._taint_to_findings(taint_flows, file_path=context.file_path)
-            )
+            raw_findings.extend(self._taint_to_findings(taint_flows, file_path=context.file_path))
             taint_ran = True
 
         raw_findings = self._deduplicate(raw_findings)
@@ -177,11 +173,7 @@ class Orchestrator:
         deadline: float | None,
     ) -> tuple[list[RawFinding], list[str]]:
         active = [r for r in rules if not r.should_skip(context)]
-        if (
-            self._settings.parallel_rules
-            and len(active) > 1
-            and deadline is None
-        ):
+        if self._settings.parallel_rules and len(active) > 1 and deadline is None:
             return self._run_rules_parallel(active, context)
         results: list[RawFinding] = []
         failed_rules: list[str] = []
@@ -269,20 +261,14 @@ class Orchestrator:
                 if deadline is not None and time.monotonic() > deadline:
                     time_budget_exceeded = True
                     break
-                flows = self._taint_tracker.analyze(
-                    ctx, fn_index=per_file_fn_index[ctx.file_path]
-                )
-                raw_findings.extend(
-                    self._taint_to_findings(flows, file_path=ctx.file_path)
-                )
+                flows = self._taint_tracker.analyze(ctx, fn_index=per_file_fn_index[ctx.file_path])
+                raw_findings.extend(self._taint_to_findings(flows, file_path=ctx.file_path))
                 taint_ran = True
 
         raw_findings = self._deduplicate(raw_findings)
         if taint_ran:
             raw_findings = self._drop_untainted_ssrf(raw_findings)
-        raw_findings = self._filter_severity(
-            raw_findings, rules, request.config.severity_threshold
-        )
+        raw_findings = self._filter_severity(raw_findings, rules, request.config.severity_threshold)
 
         ctx_map = {c.file_path: c for c in contexts}
         findings = self._enrich_findings(raw_findings, rules, ctx_map)
@@ -312,11 +298,7 @@ class Orchestrator:
     @staticmethod
     def _drop_untainted_ssrf(findings: list[RawFinding]) -> list[RawFinding]:
         """Drop AST-only SSRF after taint ran (noise). Keep when taint was skipped."""
-        return [
-            f
-            for f in findings
-            if not (f.rule_id == "JS-SSRF-001" and not f.taint_confirmed)
-        ]
+        return [f for f in findings if not (f.rule_id == "JS-SSRF-001" and not f.taint_confirmed)]
 
     def _taint_to_findings(
         self, flows: list[TaintFlow], *, file_path: str | None = None
@@ -484,9 +466,7 @@ class Orchestrator:
             low=counts.get(Severity.LOW, 0),
             info=counts.get(Severity.INFO, 0),
             files_scanned=files_scanned if files_scanned is not None else 1,
-            lines_scanned=(
-                lines_scanned if lines_scanned is not None else len(ctx.lines)
-            ),
+            lines_scanned=(lines_scanned if lines_scanned is not None else len(ctx.lines)),
             scan_duration_ms=elapsed_ms,
             time_budget_exceeded=time_budget_exceeded,
         )

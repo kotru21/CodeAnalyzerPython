@@ -66,9 +66,7 @@ app.get('/x', (req, res) => {
         )
     )
     high_sql = [
-        f
-        for f in resp.findings
-        if f.rule_id == "JS-SQL-001" and f.confidence.value == "high"
+        f for f in resp.findings if f.rule_id == "JS-SQL-001" and f.confidence.value == "high"
     ]
     assert not high_sql, "must not execute evil.js queryUser via name collision"
 

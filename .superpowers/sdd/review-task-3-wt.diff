@@ -1,0 +1,1934 @@
+﻿# Review package: Task 3 working tree
+## Commits
+(none)
+
+## Status
+ M .gitignore
+ M eval/backends/semgrep_batch.py
+ M eval/backends/semgrep_case.py
+ M eval/cases_pack/f_special.py
+ M eval/catalog_runner.py
+ M eval/classify.py
+ M eval/compare_enrich.py
+ M eval/corpus_agreement.py
+ M eval/corpus_paper_runner.py
+ M eval/corpus_paths.py
+ M eval/corpus_repro.py
+ M eval/dataset_materialize.py
+ M eval/finding_match.py
+ M eval/line_overlap.py
+ M eval/metrics.py
+ M eval/rule_map.py
+ M pyproject.toml
+ M src/analyzer/api/router.py
+ M src/analyzer/core/injection_rules.py
+ M src/analyzer/core/orchestrator.py
+ M src/analyzer/export/sarif.py
+ M src/analyzer/services/scan_repository.py
+ M src/analyzer/taint/module_graph.py
+ M src/analyzer/taint/sanitizers.py
+ M src/analyzer/taint/sources_sinks.py
+ M src/analyzer/taint/tracker.py
+ M src/analyzer/workers/tasks.py
+ M tests/eval/test_compare_enrich.py
+ M tests/eval/test_corpus_agreement.py
+ M tests/eval/test_corpus_paper_runner.py
+ M tests/eval/test_corpus_paths.py
+ M tests/eval/test_corpus_repro.py
+ M tests/eval/test_corpus_semgrep_normalize.py
+ M tests/eval/test_dataset_materialize.py
+ M tests/eval/test_line_overlap.py
+ M tests/eval/test_semgrep_batch.py
+ M tests/test_api/test_analyze_taint_integration.py
+ M tests/test_api/test_async_integration.py
+ M tests/test_api/test_async_results.py
+ M tests/test_core/test_orchestrator_bundle.py
+ M tests/test_taint/test_js_taint.py
+ M tests/test_taint/test_module_graph.py
+ M tests/test_taint/test_taint_nosql_ssrf.py
+?? .github/workflows/ci.yml
+?? .superpowers/
+?? scripts/ci_docker_smoke.sh
+
+## Files changed (vs HEAD)
+
+ .gitignore                                       |   4 +
+ eval/backends/semgrep_batch.py                   |   4 +-
+ eval/backends/semgrep_case.py                    |   4 +-
+ eval/cases_pack/f_special.py                     |   5 +-
+ eval/catalog_runner.py                           |  26 ++---
+ eval/classify.py                                 |  12 +--
+ eval/compare_enrich.py                           |  10 +-
+ eval/corpus_agreement.py                         |   9 +-
+ eval/corpus_paper_runner.py                      |  29 ++---
+ eval/corpus_paths.py                             |   4 +-
+ eval/corpus_repro.py                             |   5 +-
+ eval/dataset_materialize.py                      |   6 +-
+ eval/finding_match.py                            |   9 +-
+ eval/line_overlap.py                             |   2 +-
+ eval/metrics.py                                  |   6 +-
+ eval/rule_map.py                                 |   8 +-
+ pyproject.toml                                   |  10 ++
+ src/analyzer/api/router.py                       |  11 +-
+ src/analyzer/core/injection_rules.py             |  17 ++-
+ src/analyzer/core/orchestrator.py                |  36 ++-----
+ src/analyzer/export/sarif.py                     |   2 +-
+ src/analyzer/services/scan_repository.py         |   8 +-
+ src/analyzer/taint/module_graph.py               |  23 ++--
+ src/analyzer/taint/sanitizers.py                 |   8 +-
+ src/analyzer/taint/sources_sinks.py              | 132 ++++++++++++-----------
+ src/analyzer/taint/tracker.py                    |  53 +++------
+ src/analyzer/workers/tasks.py                    |   4 +-
+ tests/eval/test_compare_enrich.py                |  21 ++--
+ tests/eval/test_corpus_agreement.py              |   5 +-
+ tests/eval/test_corpus_paper_runner.py           |  14 +--
+ tests/eval/test_corpus_paths.py                  |   6 +-
+ tests/eval/test_corpus_repro.py                  |  13 +--
+ tests/eval/test_corpus_semgrep_normalize.py      |   5 +-
+ tests/eval/test_dataset_materialize.py           |   6 +-
+ tests/eval/test_line_overlap.py                  |  32 ++----
+ tests/eval/test_semgrep_batch.py                 |   5 +-
+ tests/test_api/test_analyze_taint_integration.py |   4 +-
+ tests/test_api/test_async_integration.py         |   4 +-
+ tests/test_api/test_async_results.py             |   7 +-
+ tests/test_core/test_orchestrator_bundle.py      |   4 +-
+ tests/test_taint/test_js_taint.py                |   6 +-
+ tests/test_taint/test_module_graph.py            |   4 +-
+ tests/test_taint/test_taint_nosql_ssrf.py        |   4 +-
+ 43 files changed, 246 insertions(+), 341 deletions(-)
+
+## Untracked of interest
+
+
+
+Name   : ci.yml
+Length : 1949
+
+
+
+
+
+## Diff vs HEAD (tracked)
+
+diff --git a/.gitignore b/.gitignore
+index 60d645a..f2941b3 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -19,10 +19,14 @@ htmlcov/
+ # Git worktrees
+ .worktrees/
+ 
+ .cursor/
+ 
++# Local design/plan docs (brainstorming); keep out of git
++docs/superpowers/specs/
++docs/superpowers/plans/
++
+ eval/results/*.json
+ eval/results/report.md
+ eval/results/raw/
+ eval/results/compare_summary.json
+ !eval/results/.gitkeep
+diff --git a/eval/backends/semgrep_batch.py b/eval/backends/semgrep_batch.py
+index ea0cd8e..d4705d4 100644
+--- a/eval/backends/semgrep_batch.py
++++ b/eval/backends/semgrep_batch.py
+@@ -42,13 +42,11 @@ def batch_scan_semgrep(
+             root = Path(tmp)
+             for case in cases:
+                 tid = str(case["test_id"])
+                 path = root / f"{tid}{_suffix_for_case(case)}"
+                 path.write_text(case.get("source_code") or "", encoding="utf-8")
+-            raw = run_semgrep_json_configs(
+-                existing, root, timeout_sec=timeout_sec
+-            )
++            raw = run_semgrep_json_configs(existing, root, timeout_sec=timeout_sec)
+     except (OSError, RuntimeError, FileNotFoundError) as e:
+         err_res = BackendScanResult(
+             ok=False,
+             error=str(e),
+             raw={},
+diff --git a/eval/backends/semgrep_case.py b/eval/backends/semgrep_case.py
+index e7b1e2b..aeee121 100644
+--- a/eval/backends/semgrep_case.py
++++ b/eval/backends/semgrep_case.py
+@@ -51,13 +51,11 @@ class SemgrepCaseBackend:
+             with tempfile.TemporaryDirectory() as tmp:
+                 root = Path(tmp)
+                 fname = _safe_basename(str(case.get("file_path") or "snippet.js"))
+                 fpath = root / fname
+                 fpath.write_text(case.get("source_code") or "", encoding="utf-8")
+-                raw = run_semgrep_json_configs(
+-                    existing, root, timeout_sec=self._timeout_sec
+-                )
++                raw = run_semgrep_json_configs(existing, root, timeout_sec=self._timeout_sec)
+         except (OSError, RuntimeError, FileNotFoundError) as e:
+             return BackendScanResult(
+                 ok=False,
+                 error=str(e),
+                 raw={},
+diff --git a/eval/cases_pack/f_special.py b/eval/cases_pack/f_special.py
+index eb9777f..d3806e6 100644
+--- a/eval/cases_pack/f_special.py
++++ b/eval/cases_pack/f_special.py
+@@ -32,14 +32,11 @@ app.get('/', (req, res) => {
+ };
+ app.get('/x', (req, res) => {
+   svc.run(req.query.id);
+ });""",
+             "CWE-89",
+-            (
+-                "╨Т╤Л╨╖╨╛╨▓ obj.method(req): ╨╛╨│╤А╨░╨╜╨╕╤З╨╡╨╜╨╕╨╡ taint; "
+-                "AST ╨╝╨╛╨╢╨╡╤В ╨▓╤Б╤С ╨╡╤Й╤С ╨┤╨░╤В╤М finding"
+-            ),
++            ("╨Т╤Л╨╖╨╛╨▓ obj.method(req): ╨╛╨│╤А╨░╨╜╨╕╤З╨╡╨╜╨╕╨╡ taint; AST ╨╝╨╛╨╢╨╡╤В ╨▓╤Б╤С ╨╡╤Й╤С ╨┤╨░╤В╤М finding"),
+             tags=["special:taint-boundary"],
+         ),
+         mk(
+             "SPECIAL-TS-SQL",
+             "JS-SQL-001",
+diff --git a/eval/catalog_runner.py b/eval/catalog_runner.py
+index abc9c7c..5b00862 100644
+--- a/eval/catalog_runner.py
++++ b/eval/catalog_runner.py
+@@ -4,23 +4,21 @@ import json
+ from typing import TYPE_CHECKING, Any
+ 
+ from analyzer.api.schemas import AnalyzeRequest, ScanConfig
+ from analyzer.config import Settings
+ from analyzer.core.orchestrator import Orchestrator
+-
++from eval.backends.semgrep_batch import batch_scan_semgrep
++from eval.backends.semgrep_case import SemgrepCaseBackend
+ from eval.catalog_loader import load_rule_ids, should_skip_main
+ from eval.classify import classify_outcome
+ from eval.finding_match import (
+     classify_case_findings,
+     expand_rows_for_metrics,
+     primary_outcome,
+ )
+ from eval.report_md import render_report
+ 
+-from eval.backends.semgrep_batch import batch_scan_semgrep
+-from eval.backends.semgrep_case import SemgrepCaseBackend
+-
+ if TYPE_CHECKING:
+     from pathlib import Path
+ 
+     from eval.backends.base import ScanBackend
+ 
+@@ -72,13 +70,11 @@ def run_catalog_inprocess(
+                 finding_outcomes = classify_case_findings(case, analyzer_data)
+                 outcome = primary_outcome(finding_outcomes)
+             else:
+                 outcome = classify_outcome(case, analyzer_data)
+             stats = analyzer_data.get("stats") or {}
+-            total = stats.get(
+-                "total_findings", len(analyzer_data.get("findings") or [])
+-            )
++            total = stats.get("total_findings", len(analyzer_data.get("findings") or []))
+         else:
+             outcome = "ERROR"
+             total = "тАФ"
+ 
+         notes = ""
+@@ -86,13 +82,11 @@ def run_catalog_inprocess(
+             notes = analyzer_err[:200]
+         nec = case.get("notes_expected_count")
+         if nec is not None and isinstance(total, int):
+             notes = (notes + f" expected_count~{nec} actual={total}").strip()
+         if finding_outcomes:
+-            notes = (
+-                notes + f" finding_outcomes={','.join(finding_outcomes)}"
+-            ).strip()
++            notes = (notes + f" finding_outcomes={','.join(finding_outcomes)}").strip()
+ 
+         row: dict[str, Any] = {
+             "test_id": tid,
+             "rule_id": case.get("rule_id"),
+             "difficulty": case.get("difficulty"),
+@@ -211,26 +205,22 @@ def run_catalog(
+                     finding_outcomes = classify_case_findings(case, analyzer_data)
+                     outcome = primary_outcome(finding_outcomes)
+                 else:
+                     outcome = classify_outcome(case, analyzer_data)
+                 stats = analyzer_data.get("stats") or {}
+-                total = stats.get(
+-                    "total_findings", len(analyzer_data.get("findings") or [])
+-                )
++                total = stats.get("total_findings", len(analyzer_data.get("findings") or []))
+             else:
+                 outcome = "ERROR"
+                 total = "тАФ"
+             notes = ""
+             if analyzer_err:
+                 notes = analyzer_err[:200]
+             nec = case.get("notes_expected_count")
+             if nec is not None and isinstance(total, int):
+                 notes = (notes + f" expected_count~{nec} actual={total}").strip()
+             if finding_outcomes:
+-                notes = (
+-                    notes + f" finding_outcomes={','.join(finding_outcomes)}"
+-                ).strip()
++                notes = (notes + f" finding_outcomes={','.join(finding_outcomes)}").strip()
+         else:
+             outcome = "ERROR"
+             total = "тАФ"
+             notes = "no analyzer_http backend"
+ 
+@@ -249,13 +239,11 @@ def run_catalog(
+         if multi:
+             row["by_backend"] = by_backend
+         rows.append(row)
+ 
+     if write_report and out_dir is not None and catalog_dir is not None:
+-        metric_rows = expand_rows_for_metrics(
+-            [r for r in rows if r.get("outcome") != "SKIP"]
+-        )
++        metric_rows = expand_rows_for_metrics([r for r in rows if r.get("outcome") != "SKIP"])
+         rule_ids = load_rule_ids(catalog_dir)
+         md = render_report(metric_rows, rule_ids)
+         (out_dir / "report.md").write_text(md, encoding="utf-8")
+ 
+     return rows
+diff --git a/eval/classify.py b/eval/classify.py
+index 4853923..212a604 100644
+--- a/eval/classify.py
++++ b/eval/classify.py
+@@ -36,24 +36,20 @@ def classify_outcome(case: dict[str, Any], response: dict[str, Any] | None) -> O
+         return "ERROR"
+ 
+     expected_rules = case.get("expected_rule_ids")
+     if expected_rules:
+         for rid in expected_rules:
+-            if not any(
+-                isinstance(f, dict) and f.get("rule_id") == rid for f in findings
+-            ):
++            if not any(isinstance(f, dict) and f.get("rule_id") == rid for f in findings):
+                 return "FN"
+         return "TP"
+ 
+     rule_id = case.get("rule_id")
+     if not isinstance(rule_id, str):
+         return "ERROR"
+     expected_cwe = case.get("expected_cwe")
+     matched = any(
+-        _finding_matches_rule(f, rule_id, expected_cwe)
+-        for f in findings
+-        if isinstance(f, dict)
++        _finding_matches_rule(f, rule_id, expected_cwe) for f in findings if isinstance(f, dict)
+     )
+     if matched:
+         return "TP"
+     return "FN"
+ 
+@@ -64,10 +60,8 @@ def aggregate_by_rule(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+     for row in rows:
+         rid = row.get("rule_id")
+         oc = row.get("outcome")
+         if not isinstance(rid, str) or oc not in ("TP", "FP", "TN", "FN", "ERROR"):
+             continue
+-        bucket = out.setdefault(
+-            rid, {"TP": 0, "FP": 0, "TN": 0, "FN": 0, "ERROR": 0}
+-        )
++        bucket = out.setdefault(rid, {"TP": 0, "FP": 0, "TN": 0, "FN": 0, "ERROR": 0})
+         bucket[oc] += 1
+     return out
+diff --git a/eval/compare_enrich.py b/eval/compare_enrich.py
+index 903c33c..0726af9 100644
+--- a/eval/compare_enrich.py
++++ b/eval/compare_enrich.py
+@@ -1,10 +1,9 @@
+ from __future__ import annotations
+ 
+ import json
+-from pathlib import Path
+-from typing import Any
++from typing import TYPE_CHECKING, Any
+ 
+ from eval.line_overlap import (
+     build_line_overlap_payload,
+     integer_lines_from_analyzer_findings,
+     integer_lines_from_semgrep_results,
+@@ -13,10 +12,13 @@ from eval.rule_map import (
+     RuleMap,
+     _rule_ids_for_case,
+     allowed_semgrep_check_ids_for_case,
+ )
+ 
++if TYPE_CHECKING:
++    from pathlib import Path
++
+ 
+ def _load_json_object(path: Path) -> dict[str, Any]:
+     if not path.is_file():
+         return {}
+     try:
+@@ -54,13 +56,11 @@ def enrich_rows_with_line_overlap(
+         s_raw = semgrep_raw.get("results")
+         results = s_raw if isinstance(s_raw, list) else []
+         results_dicts = [x for x in results if isinstance(x, dict)]
+         allow_checks = allowed_semgrep_check_ids_for_case(case, rule_map)
+         allowed_rules = (
+-            frozenset()
+-            if case.get("type") == "safe"
+-            else frozenset(_rule_ids_for_case(case))
++            frozenset() if case.get("type") == "safe" else frozenset(_rule_ids_for_case(case))
+         )
+         analyzer_lines = integer_lines_from_analyzer_findings(
+             findings_dicts,
+             allowed_rule_ids=allowed_rules,
+         )
+diff --git a/eval/corpus_agreement.py b/eval/corpus_agreement.py
+index c8ad280..e269091 100644
+--- a/eval/corpus_agreement.py
++++ b/eval/corpus_agreement.py
+@@ -1,13 +1,16 @@
+ from __future__ import annotations
+ 
+-from pathlib import Path
+-from typing import Any, Literal
++from typing import TYPE_CHECKING, Any, Literal
+ 
+ from eval.corpus_semgrep_normalize import integer_lines_from_semgrep_for_relpath
+ from eval.line_overlap import build_line_overlap_payload, integer_lines_from_analyzer_findings
+-from eval.rule_map import RuleMap
++
++if TYPE_CHECKING:
++    from pathlib import Path
++
++    from eval.rule_map import RuleMap
+ 
+ 
+ def buckets_for_policy(policy: Literal["a", "b"], rule_map: RuleMap) -> list[str]:
+     if policy == "b":
+         return ["ALL_MAPPED"]
+diff --git a/eval/corpus_paper_runner.py b/eval/corpus_paper_runner.py
+index 701290a..c817155 100644
+--- a/eval/corpus_paper_runner.py
++++ b/eval/corpus_paper_runner.py
+@@ -1,11 +1,10 @@
+ from __future__ import annotations
+ 
+ import sys
+ from collections import defaultdict
+-from pathlib import Path
+-from typing import Any, Literal
++from typing import TYPE_CHECKING, Any, Literal
+ 
+ import httpx
+ 
+ from eval.backends.semgrep_subprocess import run_semgrep_json_configs
+ from eval.corpus_agreement import (
+@@ -18,20 +17,20 @@ from eval.corpus_paths import (
+     list_js_ts_relpaths_git,
+     list_js_ts_relpaths_walk,
+ )
+ from eval.corpus_repro import config_bundle_hashes, semgrep_cli_version
+ from eval.corpus_semgrep_normalize import semgrep_result_relpath
+-from eval.rule_map import RuleMap
+ 
+-POLICY_B_NOTE = (
+-    "check_id filter: none (all Semgrep results per file under given --semgrep-config)"
+-)
++if TYPE_CHECKING:
++    from pathlib import Path
++
++    from eval.rule_map import RuleMap
+ 
++POLICY_B_NOTE = "check_id filter: none (all Semgrep results per file under given --semgrep-config)"
+ 
+-def _environment_fields(
+-    note: str | None, out_of_scope_flag: bool
+-) -> tuple[str | None, bool]:
++
++def _environment_fields(note: str | None, out_of_scope_flag: bool) -> tuple[str | None, bool]:
+     if out_of_scope_flag:
+         return note, True
+     if note:
+         return note, False
+     return None, True
+@@ -70,13 +69,11 @@ def run_paper_eval(
+         relpaths = (
+             list_js_ts_relpaths_walk(corpus)
+             if relpaths_override is None
+             else list(relpaths_override)
+         )
+-        fur = file_universe_rule or (
+-            "walk:rglob_ext=" + ",".join(sorted(DEFAULT_JS_TS_EXTENSIONS))
+-        )
++        fur = file_universe_rule or ("walk:rglob_ext=" + ",".join(sorted(DEFAULT_JS_TS_EXTENSIONS)))
+     else:
+         relpaths = (
+             list_js_ts_relpaths_git(corpus)
+             if relpaths_override is None
+             else list(relpaths_override)
+@@ -107,13 +104,11 @@ def run_paper_eval(
+             check = r.get("check_id") or r.get("rule_id")
+             if not isinstance(check, str):
+                 continue
+             if allow is not None and check not in allow:
+                 continue
+-            rp = semgrep_result_relpath(
+-                corpus, str(r.get("path")) if r.get("path") else None
+-            )
++            rp = semgrep_result_relpath(corpus, str(r.get("path")) if r.get("path") else None)
+             if rp not in files_set:
+                 continue
+             start = r.get("start")
+             if not isinstance(start, dict) or not isinstance(start.get("line"), int):
+                 continue
+@@ -180,13 +175,11 @@ def run_paper_eval(
+             )
+             per_bucket_payloads[bucket].append(payload)
+ 
+     flat_payloads = [p for lst in per_bucket_payloads.values() for p in lst]
+     agg = aggregate_overlap_payloads(flat_payloads)
+-    by_bucket = {
+-        b: aggregate_overlap_payloads(lst) for b, lst in per_bucket_payloads.items()
+-    }
++    by_bucket = {b: aggregate_overlap_payloads(lst) for b, lst in per_bucket_payloads.items()}
+ 
+     hashes = config_bundle_hashes(configs)
+     semgrep_argv = ["scan", "--json", "--quiet"]
+     for c in configs:
+         semgrep_argv.extend(["--config", str(c)])
+diff --git a/eval/corpus_paths.py b/eval/corpus_paths.py
+index 43ce202..5105d97 100644
+--- a/eval/corpus_paths.py
++++ b/eval/corpus_paths.py
+@@ -40,13 +40,11 @@ def list_js_ts_relpaths_git(
+         capture_output=True,
+         check=False,
+         text=False,
+     )
+     if proc.returncode != 0:
+-        raise RuntimeError(
+-            "git ls-files failed; use walk mode or run from a git checkout"
+-        )
++        raise RuntimeError("git ls-files failed; use walk mode or run from a git checkout")
+     raw = proc.stdout.split(b"\0")
+     out: list[str] = []
+     for b in raw:
+         if not b:
+             continue
+diff --git a/eval/corpus_repro.py b/eval/corpus_repro.py
+index bdc9cec..4ca9f81 100644
+--- a/eval/corpus_repro.py
++++ b/eval/corpus_repro.py
+@@ -1,13 +1,16 @@
+ from __future__ import annotations
+ 
+ import hashlib
+ import subprocess
+-from pathlib import Path
++from typing import TYPE_CHECKING
+ 
+ from eval.backends.semgrep_subprocess import semgrep_executable
+ 
++if TYPE_CHECKING:
++    from pathlib import Path
++
+ 
+ def sha256_file(path: Path) -> str:
+     h = hashlib.sha256()
+     with path.open("rb") as f:
+         for chunk in iter(lambda: f.read(65536), b""):
+diff --git a/eval/dataset_materialize.py b/eval/dataset_materialize.py
+index ee831d5..1a03c85 100644
+--- a/eval/dataset_materialize.py
++++ b/eval/dataset_materialize.py
+@@ -2,17 +2,19 @@ from __future__ import annotations
+ 
+ import csv
+ import hashlib
+ import json
+ import re
+-from pathlib import Path
+-from typing import Any
++from typing import TYPE_CHECKING, Any
+ 
+ import httpx
+ 
+ from eval.dataset_github import github_blob_to_raw_url, parse_github_blob_url
+ 
++if TYPE_CHECKING:
++    from pathlib import Path
++
+ 
+ def snapshot_id_for_repo_commit(owner: str, repo: str, sha: str) -> str:
+     safe_repo = re.sub(r"[/\\:]+", "_", repo)
+     return f"{owner}_{safe_repo}_{sha[:12]}"
+ 
+diff --git a/eval/finding_match.py b/eval/finding_match.py
+index 0ec2af1..4c88a35 100644
+--- a/eval/finding_match.py
++++ b/eval/finding_match.py
+@@ -1,10 +1,11 @@
+ from __future__ import annotations
+ 
+-from typing import Any, Literal
++from typing import TYPE_CHECKING, Any, Literal
+ 
+-from eval.classify import Outcome
++if TYPE_CHECKING:
++    from eval.classify import Outcome
+ 
+ 
+ def finding_matches_expected(
+     finding: dict[str, Any],
+     expected: dict[str, Any],
+@@ -60,11 +61,11 @@ def classify_case_findings(
+ 
+     outcomes: list[FindingOutcome] = []
+     matched_findings: set[int] = set()
+ 
+     if case.get("type") == "safe":
+-        for i, f in enumerate(findings):
++        for i, _f in enumerate(findings):
+             outcomes.append("FP")
+             matched_findings.add(i)
+         if not findings:
+             outcomes.append("TN")
+         return outcomes
+@@ -80,11 +81,11 @@ def classify_case_findings(
+                 hit = True
+                 break
+         if not hit:
+             outcomes.append("FN")
+ 
+-    for i, f in enumerate(findings):
++    for i, _f in enumerate(findings):
+         if i not in matched_findings:
+             outcomes.append("FP")
+     return outcomes
+ 
+ 
+diff --git a/eval/line_overlap.py b/eval/line_overlap.py
+index fa40207..7a8fa39 100644
+--- a/eval/line_overlap.py
++++ b/eval/line_overlap.py
+@@ -59,11 +59,11 @@ def greedy_match_lines(
+     analyzer_lines: list[int],
+     semgrep_lines: list[int],
+     *,
+     line_slop: int,
+ ) -> tuple[list[list[int]], list[int], list[int]]:
+-    """Greedy pairing: for each analyzer line in order, take smallest unmatched semgrep line within slop."""
++    """Greedy pairing: for each analyzer line, take smallest unmatched semgrep line within slop."""
+     matched: list[list[int]] = []
+     used_sem: set[int] = set()
+     for a in analyzer_lines:
+         chosen: int | None = None
+         for s in semgrep_lines:
+diff --git a/eval/metrics.py b/eval/metrics.py
+index ebdf356..dd1f271 100644
+--- a/eval/metrics.py
++++ b/eval/metrics.py
+@@ -2,15 +2,11 @@ from __future__ import annotations
+ 
+ 
+ def precision_recall_f1(tp: int, fp: int, fn: int) -> tuple[float, float, float]:
+     precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+     recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+-    f1 = (
+-        0.0
+-        if precision + recall == 0
+-        else 2 * precision * recall / (precision + recall)
+-    )
++    f1 = 0.0 if precision + recall == 0 else 2 * precision * recall / (precision + recall)
+     return precision, recall, f1
+ 
+ 
+ def false_positive_rate(fp: int, tn: int) -> float:
+     return fp / (fp + tn) if (fp + tn) > 0 else 0.0
+diff --git a/eval/rule_map.py b/eval/rule_map.py
+index ec6eefa..5207d1e 100644
+--- a/eval/rule_map.py
++++ b/eval/rule_map.py
+@@ -61,13 +61,11 @@ def load_rule_map(path: Path) -> RuleMap:
+         line_slop=line_slop,
+         equivalence_rules=equivalence_rules,
+     )
+ 
+ 
+-def get_semgrep_configs_for_rule(
+-    rule_map: RuleMap, rule_id: str, repo_root: Path
+-) -> list[Path]:
++def get_semgrep_configs_for_rule(rule_map: RuleMap, rule_id: str, repo_root: Path) -> list[Path]:
+     paths = rule_map.rules.get(rule_id, [])
+     out: list[Path] = []
+     for p in paths:
+         q = Path(p)
+         out.append(q if q.is_absolute() else (repo_root / q).resolve())
+@@ -85,13 +83,11 @@ def _rule_ids_for_case(case: dict[str, Any]) -> list[str]:
+             if isinstance(x, str):
+                 ids.append(x)
+     return ids
+ 
+ 
+-def allowed_semgrep_check_ids_for_case(
+-    case: dict[str, Any], rule_map: RuleMap
+-) -> frozenset[str]:
++def allowed_semgrep_check_ids_for_case(case: dict[str, Any], rule_map: RuleMap) -> frozenset[str]:
+     out: set[str] = set()
+     eq = rule_map.equivalence_rules
+     for rid in _rule_ids_for_case(case):
+         for cid in eq.get(rid, ()):
+             out.add(cid)
+diff --git a/pyproject.toml b/pyproject.toml
+index 897bc65..7685014 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -27,10 +27,12 @@ dev = [
+     "pytest>=9.0",
+     "pytest-asyncio>=1.0",
+     "pytest-cov>=7.0",
+     "ruff>=0.16",
+     "mypy>=2.0",
++    "pip-audit>=2.9",
++    "pre-commit>=4.0",
+ ]
+ 
+ [build-system]
+ requires = ["setuptools>=75.0"]
+ build-backend = "setuptools.build_meta"
+@@ -41,10 +43,18 @@ where = ["src"]
+ [tool.pytest.ini_options]
+ testpaths = ["tests"]
+ asyncio_mode = "auto"
+ pythonpath = ["src", "."]
+ 
++[tool.coverage.run]
++source = ["analyzer"]
++branch = false
++
++[tool.coverage.report]
++fail_under = 84
++show_missing = true
++
+ [tool.ruff]
+ # Syntax/lint baseline; runtime and CI use 3.14 (see Dockerfile / eval.yml).
+ target-version = "py312"
+ line-length = 100
+ src = ["src", "tests", "eval"]
+diff --git a/src/analyzer/api/router.py b/src/analyzer/api/router.py
+index 9f0b501..3abb1e4 100644
+--- a/src/analyzer/api/router.py
++++ b/src/analyzer/api/router.py
+@@ -155,12 +155,11 @@ def analyze_async(
+ ) -> AsyncAnalyzeResponse:
+     if len(request.source_code.encode()) > settings.max_source_bytes:
+         raise HTTPException(
+             status_code=413,
+             detail=(
+-                f"Source too large for async analysis. "
+-                f"Max: {settings.max_source_bytes} bytes."
++                f"Source too large for async analysis. Max: {settings.max_source_bytes} bytes."
+             ),
+         )
+     scan_id = str(uuid4())
+     config = request.config.model_dump(mode="json")
+     language = request.language or detect_language(request.file_path)
+@@ -211,13 +210,11 @@ def analyze_async(
+             except Exception:  # noqa: BLE001
+                 _logger.exception("failed to revoke orphan celery task %s", task.id)
+         factory = get_session_factory()
+         session = factory()
+         try:
+-            err_code = (
+-                "redis_unavailable" if isinstance(e, redis.RedisError) else "enqueue_failed"
+-            )
++            err_code = "redis_unavailable" if isinstance(e, redis.RedisError) else "enqueue_failed"
+             mark_failed(
+                 session,
+                 scan_id,
+                 error_message=str(e) or "enqueue failed",
+                 error_code=err_code,
+@@ -247,13 +244,11 @@ def get_results(
+         raise HTTPException(status_code=404, detail="unknown scan_id") from None
+ 
+     factory = get_session_factory()
+     session = factory()
+     try:
+-        stale_after = settings.scan_stale_after_seconds or (
+-            settings.celery_time_limit_seconds + 60
+-        )
++        stale_after = settings.scan_stale_after_seconds or (settings.celery_time_limit_seconds + 60)
+         fail_stale_scan(session, scan_id, older_than_seconds=stale_after)
+         scan = get_scan(session, scan_id)
+         if scan is None:
+             raise HTTPException(status_code=404, detail="unknown scan_id")
+         return scan_to_result_dict(session, scan)
+diff --git a/src/analyzer/core/injection_rules.py b/src/analyzer/core/injection_rules.py
+index 64f782b..d5c8193 100644
+--- a/src/analyzer/core/injection_rules.py
++++ b/src/analyzer/core/injection_rules.py
+@@ -1,4 +1,13 @@
+-INJECTION_RULE_IDS: frozenset[str] = frozenset({
+-    "JS-SQL-001", "JS-CMD-001", "JS-XSS-001", "JS-XSS-002", "JS-XSS-003",
+-    "JS-PATH-001", "JS-NOSQL-001", "JS-SSRF-001", "JS-REDIRECT-001",
+-})
++INJECTION_RULE_IDS: frozenset[str] = frozenset(
++    {
++        "JS-SQL-001",
++        "JS-CMD-001",
++        "JS-XSS-001",
++        "JS-XSS-002",
++        "JS-XSS-003",
++        "JS-PATH-001",
++        "JS-NOSQL-001",
++        "JS-SSRF-001",
++        "JS-REDIRECT-001",
++    }
++)
+diff --git a/src/analyzer/core/orchestrator.py b/src/analyzer/core/orchestrator.py
+index 3097ebe..b95591b 100644
+--- a/src/analyzer/core/orchestrator.py
++++ b/src/analyzer/core/orchestrator.py
+@@ -76,13 +76,11 @@ _logger = logging.getLogger(__name__)
+ 
+ class Orchestrator:
+     def __init__(self, settings: Settings, cwe_db: CWEDatabase | None = None) -> None:
+         self._settings = settings
+         self._cwe_db = cwe_db
+-        self._taint_tracker = TaintTracker(
+-            sql_sink_allowlist=settings.sql_sink_allowlist
+-        )
++        self._taint_tracker = TaintTracker(sql_sink_allowlist=settings.sql_sink_allowlist)
+ 
+     def analyze_sync(self, request: AnalyzeRequest) -> AnalyzeResponse:
+         start = time.monotonic()
+         scan_id = request.scan_id if request.scan_id is not None else uuid4()
+         budget_ms = self._settings.analysis_budget_ms
+@@ -110,13 +108,11 @@ class Orchestrator:
+         time_budget_exceeded = deadline is not None and time.monotonic() > deadline
+ 
+         taint_ran = False
+         if request.config.enable_taint and not time_budget_exceeded:
+             taint_flows = self._taint_tracker.analyze(context)
+-            raw_findings.extend(
+-                self._taint_to_findings(taint_flows, file_path=context.file_path)
+-            )
++            raw_findings.extend(self._taint_to_findings(taint_flows, file_path=context.file_path))
+             taint_ran = True
+ 
+         raw_findings = self._deduplicate(raw_findings)
+         if taint_ran:
+             raw_findings = self._drop_untainted_ssrf(raw_findings)
+@@ -175,15 +171,11 @@ class Orchestrator:
+         rules: Sequence[BaseRule],
+         context: AnalysisContext,
+         deadline: float | None,
+     ) -> tuple[list[RawFinding], list[str]]:
+         active = [r for r in rules if not r.should_skip(context)]
+-        if (
+-            self._settings.parallel_rules
+-            and len(active) > 1
+-            and deadline is None
+-        ):
++        if self._settings.parallel_rules and len(active) > 1 and deadline is None:
+             return self._run_rules_parallel(active, context)
+         results: list[RawFinding] = []
+         failed_rules: list[str] = []
+         for rule in active:
+             if deadline is not None and time.monotonic() > deadline:
+@@ -267,24 +259,18 @@ class Orchestrator:
+         if request.config.enable_taint and not time_budget_exceeded:
+             for ctx in contexts:
+                 if deadline is not None and time.monotonic() > deadline:
+                     time_budget_exceeded = True
+                     break
+-                flows = self._taint_tracker.analyze(
+-                    ctx, fn_index=per_file_fn_index[ctx.file_path]
+-                )
+-                raw_findings.extend(
+-                    self._taint_to_findings(flows, file_path=ctx.file_path)
+-                )
++                flows = self._taint_tracker.analyze(ctx, fn_index=per_file_fn_index[ctx.file_path])
++                raw_findings.extend(self._taint_to_findings(flows, file_path=ctx.file_path))
+                 taint_ran = True
+ 
+         raw_findings = self._deduplicate(raw_findings)
+         if taint_ran:
+             raw_findings = self._drop_untainted_ssrf(raw_findings)
+-        raw_findings = self._filter_severity(
+-            raw_findings, rules, request.config.severity_threshold
+-        )
++        raw_findings = self._filter_severity(raw_findings, rules, request.config.severity_threshold)
+ 
+         ctx_map = {c.file_path: c for c in contexts}
+         findings = self._enrich_findings(raw_findings, rules, ctx_map)
+ 
+         elapsed_ms = int((time.monotonic() - start) * 1000)
+@@ -310,15 +296,11 @@ class Orchestrator:
+         )
+ 
+     @staticmethod
+     def _drop_untainted_ssrf(findings: list[RawFinding]) -> list[RawFinding]:
+         """Drop AST-only SSRF after taint ran (noise). Keep when taint was skipped."""
+-        return [
+-            f
+-            for f in findings
+-            if not (f.rule_id == "JS-SSRF-001" and not f.taint_confirmed)
+-        ]
++        return [f for f in findings if not (f.rule_id == "JS-SSRF-001" and not f.taint_confirmed)]
+ 
+     def _taint_to_findings(
+         self, flows: list[TaintFlow], *, file_path: str | None = None
+     ) -> list[RawFinding]:
+         results: list[RawFinding] = []
+@@ -482,11 +464,9 @@ class Orchestrator:
+             high=counts.get(Severity.HIGH, 0),
+             medium=counts.get(Severity.MEDIUM, 0),
+             low=counts.get(Severity.LOW, 0),
+             info=counts.get(Severity.INFO, 0),
+             files_scanned=files_scanned if files_scanned is not None else 1,
+-            lines_scanned=(
+-                lines_scanned if lines_scanned is not None else len(ctx.lines)
+-            ),
++            lines_scanned=(lines_scanned if lines_scanned is not None else len(ctx.lines)),
+             scan_duration_ms=elapsed_ms,
+             time_budget_exceeded=time_budget_exceeded,
+         )
+diff --git a/src/analyzer/export/sarif.py b/src/analyzer/export/sarif.py
+index 7338e36..a85ae67 100644
+--- a/src/analyzer/export/sarif.py
++++ b/src/analyzer/export/sarif.py
+@@ -62,12 +62,12 @@ def build_sarif_log(
+                     "physicalLocation": {
+                         "artifactLocation": {"uri": uri},
+                         "region": {
+                             "startLine": finding.line_start,
+                             "endLine": finding.line_end,
++                            # tree-sitter columns are 0-based; SARIF 2.1 is 1-based
+                             **(
+-                                # tree-sitter columns are 0-based; SARIF 2.1 is 1-based
+                                 {"startColumn": finding.column + 1}
+                                 if finding.column is not None
+                                 else {}
+                             ),
+                         },
+diff --git a/src/analyzer/services/scan_repository.py b/src/analyzer/services/scan_repository.py
+index f0f89bb..e87e1c1 100644
+--- a/src/analyzer/services/scan_repository.py
++++ b/src/analyzer/services/scan_repository.py
+@@ -84,13 +84,11 @@ def mark_failed(
+     scan.updated_at = datetime.now(UTC)
+     session.commit()
+     return True
+ 
+ 
+-def fail_stale_scan(
+-    session: Session, scan_id: str, *, older_than_seconds: int
+-) -> bool:
++def fail_stale_scan(session: Session, scan_id: str, *, older_than_seconds: int) -> bool:
+     """Mark a single pending/running scan failed if updated_at is past threshold."""
+     if older_than_seconds <= 0:
+         return False
+     scan = session.get(Scan, scan_id)
+     if scan is None or scan.status not in ("pending", "running", "queued"):
+@@ -158,13 +156,11 @@ def save_analyze_response(session: Session, response: AnalyzeResponse) -> Scan:
+     scan.lines_scanned = response.stats.lines_scanned
+     scan.scan_duration_ms = response.stats.scan_duration_ms
+     scan.failed_rules_json = json.dumps(list(response.failed_rules))
+ 
+     for f in response.findings:
+-        fp = md5_fingerprint(
+-            f.rule_id, f.file_path, str(f.line_start), str(f.column or 0)
+-        )
++        fp = md5_fingerprint(f.rule_id, f.file_path, str(f.line_start), str(f.column or 0))
+         session.add(
+             FindingModel(
+                 scan_id=sid,
+                 rule_id=f.rule_id,
+                 title=f.title,
+diff --git a/src/analyzer/taint/module_graph.py b/src/analyzer/taint/module_graph.py
+index 2d942c3..8a35845 100644
+--- a/src/analyzer/taint/module_graph.py
++++ b/src/analyzer/taint/module_graph.py
+@@ -13,16 +13,12 @@ if TYPE_CHECKING:
+     from tree_sitter import Node
+ 
+     from analyzer.rules.base import AnalysisContext
+ 
+ _REQUIRE_RE = re.compile(r"""require\(\s*['"]([^'"]+)['"]\s*\)""")
+-_IMPORT_RE = re.compile(
+-    r"""(?:from\s+['"]([^'"]+)['"]|import\s+['"]([^'"]+)['"])"""
+-)
+-_EXPORT_FROM_RE = re.compile(
+-    r"""export\s+(?:\*|\{[^}]+\})\s+from\s+['"]([^'"]+)['"]"""
+-)
++_IMPORT_RE = re.compile(r"""(?:from\s+['"]([^'"]+)['"]|import\s+['"]([^'"]+)['"])""")
++_EXPORT_FROM_RE = re.compile(r"""export\s+(?:\*|\{[^}]+\})\s+from\s+['"]([^'"]+)['"]""")
+ 
+ 
+ def parse_relative_imports(source: str) -> list[str]:
+     paths: list[str] = []
+     for m in _REQUIRE_RE.finditer(source):
+@@ -282,37 +278,30 @@ def build_per_file_fn_index(
+     tsconfig_paths: Mapping[str, list[str]] | None = None,
+ ) -> dict[str, dict[str, tuple[list[str], Node]]]:
+     """Per consumer file: local fn_index plus resolved require/import exports."""
+     by_path = {ctx.file_path: ctx for ctx in contexts}
+     file_indices = {
+-        path: merge_fn_index_from_roots([ctx.root_node])
+-        for path, ctx in by_path.items()
+-    }
+-    file_exports = {
+-        path: exported_bindings(ctx.root_node) for path, ctx in by_path.items()
++        path: merge_fn_index_from_roots([ctx.root_node]) for path, ctx in by_path.items()
+     }
++    file_exports = {path: exported_bindings(ctx.root_node) for path, ctx in by_path.items()}
+ 
+     result: dict[str, dict[str, tuple[list[str], Node]]] = {}
+     for ctx in contexts:
+         idx = dict(file_indices[ctx.file_path])
+         for rel in parse_relative_imports(ctx.source_code):
+-            dep_path = _match_bundle_path(
+-                files, ctx.file_path, rel, tsconfig_paths=tsconfig_paths
+-            )
++            dep_path = _match_bundle_path(files, ctx.file_path, rel, tsconfig_paths=tsconfig_paths)
+             if dep_path is None:
+                 continue
+             dep_ctx = by_path.get(dep_path)
+             if dep_ctx is None:
+                 continue
+             exports = dict(file_exports[dep_path])
+             # Re-export: export { foo } from './other'
+             for re_rel in parse_relative_imports(dep_ctx.source_code):
+                 if "export" not in dep_ctx.source_code:
+                     break
+-                re_path = _match_bundle_path(
+-                    files, dep_path, re_rel, tsconfig_paths=tsconfig_paths
+-                )
++                re_path = _match_bundle_path(files, dep_path, re_rel, tsconfig_paths=tsconfig_paths)
+                 if re_path is None or re_path not in file_exports:
+                     continue
+                 for en, fn in file_exports[re_path].items():
+                     exports.setdefault(en, fn)
+             dep_idx = file_indices[dep_path]
+diff --git a/src/analyzer/taint/sanitizers.py b/src/analyzer/taint/sanitizers.py
+index f9bfd43..3691ce7 100644
+--- a/src/analyzer/taint/sanitizers.py
++++ b/src/analyzer/taint/sanitizers.py
+@@ -24,13 +24,11 @@ SANITIZERS: list[Sanitizer] = [
+ 
+ SANITIZER_NAMES: frozenset[str] = frozenset(s.pattern.split(".")[-1] for s in SANITIZERS)
+ 
+ SANITIZER_BY_PATTERN: dict[str, str] = {s.pattern: s.category for s in SANITIZERS}
+ 
+-SINK_CATEGORY_BY_METHOD: dict[str, str] = {
+-    s.pattern.split(".")[-1]: s.category for s in ALL_SINKS
+-}
++SINK_CATEGORY_BY_METHOD: dict[str, str] = {s.pattern.split(".")[-1]: s.category for s in ALL_SINKS}
+ # NoSQL methods are not in ALL_SINKS patterns as dotted names.
+ for _nosql_m in ("find", "findOne", "findOneAndUpdate", "updateOne", "deleteOne", "aggregate"):
+     SINK_CATEGORY_BY_METHOD.setdefault(_nosql_m, "nosql")
+ 
+ PARAMETERIZED_PATTERNS: frozenset[str] = frozenset(
+@@ -71,13 +69,11 @@ def sanitizer_applies_to_sink(func_text: str, sink_method: str) -> bool:
+     if sink_category is None:
+         return False
+     return _categories_cover_sink_category(cats, sink_category)
+ 
+ 
+-def sanitizer_categories_cover_sink(
+-    sanitizer_cats: frozenset[str], sink_method: str
+-) -> bool:
++def sanitizer_categories_cover_sink(sanitizer_cats: frozenset[str], sink_method: str) -> bool:
+     sink_category = SINK_CATEGORY_BY_METHOD.get(sink_method)
+     if sink_category is None:
+         return False
+     return _categories_cover_sink_category(sanitizer_cats, sink_category)
+ 
+diff --git a/src/analyzer/taint/sources_sinks.py b/src/analyzer/taint/sources_sinks.py
+index 30877bd..1457388 100644
+--- a/src/analyzer/taint/sources_sinks.py
++++ b/src/analyzer/taint/sources_sinks.py
+@@ -118,72 +118,82 @@ SQL_SINK_METHOD_NAMES: frozenset[str] = frozenset(
+     s.pattern.split(".")[-1] for s in SQL_SINKS if "." in s.pattern
+ )
+ 
+ COMMAND_SINK_METHOD_NAMES: frozenset[str] = frozenset(s.pattern for s in COMMAND_SINKS)
+ 
+-NOSQL_SINK_METHODS: frozenset[str] = frozenset({
+-    "find",
+-    "findOne",
+-    "findOneAndUpdate",
+-    "updateOne",
+-    "deleteOne",
+-    "aggregate",
+-})
+-
+-HTTP_METHOD_SINKS: frozenset[str] = frozenset({
+-    "get",
+-    "post",
+-    "put",
+-    "patch",
+-    "delete",
+-    "head",
+-    "request",
+-})
++NOSQL_SINK_METHODS: frozenset[str] = frozenset(
++    {
++        "find",
++        "findOne",
++        "findOneAndUpdate",
++        "updateOne",
++        "deleteOne",
++        "aggregate",
++    }
++)
++
++HTTP_METHOD_SINKS: frozenset[str] = frozenset(
++    {
++        "get",
++        "post",
++        "put",
++        "patch",
++        "delete",
++        "head",
++        "request",
++    }
++)
+ 
+ # Only well-known HTTP client receivers (avoid Map.get, headers.get, generic client/api).
+-HTTP_RECEIVER_ALLOWLIST: frozenset[str] = frozenset({
+-    "axios",
+-    "http",
+-    "https",
+-    "fetch",
+-    "request",
+-    "got",
+-    "superagent",
+-    "httpClient",
+-    "undici",
+-    "needle",
+-})
++HTTP_RECEIVER_ALLOWLIST: frozenset[str] = frozenset(
++    {
++        "axios",
++        "http",
++        "https",
++        "fetch",
++        "request",
++        "got",
++        "superagent",
++        "httpClient",
++        "undici",
++        "needle",
++    }
++)
+ 
+ # DB / ORM receivers for SQL method sinks (*.query, etc.).
+-SQL_RECEIVER_ALLOWLIST: frozenset[str] = frozenset({
+-    "db",
+-    "dbConn",
+-    "pool",
+-    "connection",
+-    "conn",
+-    "client",
+-    "sequelize",
+-    "knex",
+-    "prisma",
+-    "pg",
+-    "mysql",
+-    "mysql2",
+-    "sqlite",
+-    "database",
+-    "sql",
+-})
++SQL_RECEIVER_ALLOWLIST: frozenset[str] = frozenset(
++    {
++        "db",
++        "dbConn",
++        "pool",
++        "connection",
++        "conn",
++        "client",
++        "sequelize",
++        "knex",
++        "prisma",
++        "pg",
++        "mysql",
++        "mysql2",
++        "sqlite",
++        "database",
++        "sql",
++    }
++)
+ 
+ # Mongo / ODM-style receivers for NoSQL method sinks (avoid Array.prototype.find).
+-NOSQL_RECEIVER_ALLOWLIST: frozenset[str] = frozenset({
+-    "collection",
+-    "col",
+-    "model",
+-    "Model",
+-    "db",
+-    "mongo",
+-    "mongodb",
+-    "mongoose",
+-    "users",
+-    "User",
+-    "docs",
+-    "documents",
+-})
++NOSQL_RECEIVER_ALLOWLIST: frozenset[str] = frozenset(
++    {
++        "collection",
++        "col",
++        "model",
++        "Model",
++        "db",
++        "mongo",
++        "mongodb",
++        "mongoose",
++        "users",
++        "User",
++        "docs",
++        "documents",
++    }
++)
+diff --git a/src/analyzer/taint/tracker.py b/src/analyzer/taint/tracker.py
+index 701ab9c..b62d6dc 100644
+--- a/src/analyzer/taint/tracker.py
++++ b/src/analyzer/taint/tracker.py
+@@ -21,13 +21,11 @@ from analyzer.taint.sources_sinks import (
+     SQL_RECEIVER_ALLOWLIST,
+     SQL_SINK_METHOD_NAMES,
+     is_weak_source,
+ )
+ 
+-_FUNCTION_NODE_TYPES = frozenset(
+-    {"function_declaration", "arrow_function", "function_expression"}
+-)
++_FUNCTION_NODE_TYPES = frozenset({"function_declaration", "arrow_function", "function_expression"})
+ 
+ MAX_INTERPROC_DEPTH = 5
+ 
+ # Only these wrappers propagate taint from args when interproc does not resolve.
+ _TRANSPARENT_WRAPPERS: frozenset[str] = frozenset(
+@@ -228,45 +226,31 @@ class TaintTracker:
+         if node.type == "if_statement":
+             cond = node.child_by_field_name("condition")
+             cons = node.child_by_field_name("consequence")
+             alt = node.child_by_field_name("alternative")
+             if cond is not None:
+-                self._collect_taint_info(
+-                    cond, tainted, sanitized, flows, ctx, fn_index, depth
+-                )
++                self._collect_taint_info(cond, tainted, sanitized, flows, ctx, fn_index, depth)
+             then_t, then_s = dict(tainted), dict(sanitized)
+             if cons is not None:
+-                self._collect_taint_info(
+-                    cons, then_t, then_s, flows, ctx, fn_index, depth
+-                )
++                self._collect_taint_info(cons, then_t, then_s, flows, ctx, fn_index, depth)
+             else_t, else_s = dict(tainted), dict(sanitized)
+             if alt is not None:
+-                self._collect_taint_info(
+-                    alt, else_t, else_s, flows, ctx, fn_index, depth
+-                )
++                self._collect_taint_info(alt, else_t, else_s, flows, ctx, fn_index, depth)
+             self._join_scopes(tainted, sanitized, then_t, then_s, else_t, else_s, alt is None)
+             return
+ 
+         if node.type == "variable_declarator":
+-            self._handle_var_decl(
+-                node, tainted, sanitized, flows, ctx, fn_index, depth
+-            )
++            self._handle_var_decl(node, tainted, sanitized, flows, ctx, fn_index, depth)
+         elif node.type == "assignment_expression":
+-            self._handle_assignment(
+-                node, tainted, sanitized, flows, ctx, fn_index, depth
+-            )
++            self._handle_assignment(node, tainted, sanitized, flows, ctx, fn_index, depth)
+             self._check_assignment_sink(node, tainted, sanitized, flows, ctx)
+         elif node.type == "call_expression":
+             self._check_sink(node, tainted, sanitized, flows, ctx)
+-            self._analyze_callee_interproc(
+-                node, tainted, sanitized, flows, ctx, fn_index, depth
+-            )
++            self._analyze_callee_interproc(node, tainted, sanitized, flows, ctx, fn_index, depth)
+ 
+         for child in node.children:
+-            self._collect_taint_info(
+-                child, tainted, sanitized, flows, ctx, fn_index, depth
+-            )
++            self._collect_taint_info(child, tainted, sanitized, flows, ctx, fn_index, depth)
+ 
+     @staticmethod
+     def _join_scopes(
+         out_tainted: dict[str, str],
+         out_sanitized: dict[str, frozenset[str]],
+@@ -370,13 +354,11 @@ class TaintTracker:
+         cache_key = (fname, depth, sig)
+         if cache_key in self._interproc_cache:
+             return self._return_expression_taint(body, dict(bindings), san_child)
+         self._interproc_cache.add(cache_key)
+         # Do not inherit ambient outer taint into the callee.
+-        self._collect_taint_info(
+-            body, dict(bindings), san_child, flows, ctx, fn_index, depth + 1
+-        )
++        self._collect_taint_info(body, dict(bindings), san_child, flows, ctx, fn_index, depth + 1)
+         return self._return_expression_taint(body, dict(bindings), san_child)
+ 
+     def _interproc_call_return_source(
+         self,
+         call_node: Node,
+@@ -643,28 +625,21 @@ class TaintTracker:
+         method = self._get_sink_method(func)
+         if not self._is_known_sink(func, method):
+             return
+ 
+         pos_args = _positional_arguments(args)
+-        if (
+-            len(pos_args) >= 2
+-            and method in _SQL_PLACEHOLDER_MULTIARG_METHODS
+-        ):
++        if len(pos_args) >= 2 and method in _SQL_PLACEHOLDER_MULTIARG_METHODS:
+             first = pos_args[0]
+-            taint_in_first = self._find_tainted_in_arg(
+-                first, tainted, sanitized, method
+-            )
++            taint_in_first = self._find_tainted_in_arg(first, tainted, sanitized, method)
+             lit = _string_literal_text(first)
+             # Parameterized / bound style: SQL text arg not tainted; values may be.
+             if taint_in_first is None and (
+                 lit is None or is_parameterized_query(lit) or first.type == "identifier"
+             ):
+                 return
+             if lit is not None and is_parameterized_query(lit):
+-                if taint_in_first and self._should_report_flow(
+-                    taint_in_first, method
+-                ):
++                if taint_in_first and self._should_report_flow(taint_in_first, method):
+                     line = node.start_point[0] + 1
+                     flows.append(
+                         TaintFlow(
+                             source=taint_in_first,
+                             sink_method=method,
+@@ -711,13 +686,11 @@ class TaintTracker:
+             match = find_matching_source(node)
+             if match:
+                 return match
+ 
+         for child in node.children:
+-            result = self._find_tainted_in_arg(
+-                child, tainted, sanitized, sink_method
+-            )
++            result = self._find_tainted_in_arg(child, tainted, sanitized, sink_method)
+             if result:
+                 return result
+ 
+         return None
+ 
+diff --git a/src/analyzer/workers/tasks.py b/src/analyzer/workers/tasks.py
+index e3c421d..5ca281d 100644
+--- a/src/analyzer/workers/tasks.py
++++ b/src/analyzer/workers/tasks.py
+@@ -123,13 +123,11 @@ def run_async_scan(
+         session.close()
+ 
+     try:
+         # Prefer Redis blob (smaller broker payload); fall back to task arg for old APIs.
+         code = None
+-        redis_client = redis_lib.Redis.from_url(
+-            worker_settings.redis_url, decode_responses=True
+-        )
++        redis_client = redis_lib.Redis.from_url(worker_settings.redis_url, decode_responses=True)
+         try:
+             code = load_scan_source(redis_client, scan_id)
+         except Exception:  # noqa: BLE001
+             _logger.warning("redis source load failed for %s; trying task arg", scan_id)
+         if code is None:
+diff --git a/tests/eval/test_compare_enrich.py b/tests/eval/test_compare_enrich.py
+index f9b0735..f422dac 100644
+--- a/tests/eval/test_compare_enrich.py
++++ b/tests/eval/test_compare_enrich.py
+@@ -1,13 +1,16 @@
+ from __future__ import annotations
+ 
+ import json
+-from pathlib import Path
++from typing import TYPE_CHECKING
+ 
+ from eval.compare_enrich import enrich_rows_with_line_overlap
+ from eval.rule_map import load_rule_map
+ 
++if TYPE_CHECKING:
++    from pathlib import Path
++
+ 
+ def test_enrich_adds_line_overlap_when_both_backends(tmp_path: Path) -> None:
+     raw = tmp_path / "raw"
+     raw.mkdir()
+     tid = "CASE-A"
+@@ -35,38 +38,32 @@ def test_enrich_adds_line_overlap_when_both_backends(tmp_path: Path) -> None:
+         encoding="utf-8",
+     )
+     cases = [{"test_id": tid, "rule_id": "R1", "type": "vulnerable"}]
+     rows = [{"test_id": tid, "outcome": "TP"}]
+     rm = load_rule_map(mpath)
+-    enrich_rows_with_line_overlap(
+-        rows, cases, rm, raw, backends_have_semgrep_and_http=True
+-    )
++    enrich_rows_with_line_overlap(rows, cases, rm, raw, backends_have_semgrep_and_http=True)
+     assert "line_overlap" in rows[0]
+     assert rows[0]["line_overlap"]["matched_lines"] == [[3, 3]]
+ 
+ 
+ def test_skip_row_omits_line_overlap(tmp_path: Path) -> None:
+     mpath = tmp_path / "m.yaml"
+     mpath.write_text("version: 1\nrules: {}\n", encoding="utf-8")
+     rm = load_rule_map(mpath)
+     rows = [{"test_id": "X", "outcome": "SKIP"}]
+     cases = [{"test_id": "X", "rule_id": "R", "type": "vulnerable"}]
+-    enrich_rows_with_line_overlap(
+-        rows, cases, rm, tmp_path, backends_have_semgrep_and_http=True
+-    )
++    enrich_rows_with_line_overlap(rows, cases, rm, tmp_path, backends_have_semgrep_and_http=True)
+     assert "line_overlap" not in rows[0]
+ 
+ 
+ def test_backends_flag_false_no_op(tmp_path: Path) -> None:
+     mpath = tmp_path / "m.yaml"
+     mpath.write_text("version: 1\nrules: {}\n", encoding="utf-8")
+     rm = load_rule_map(mpath)
+     rows = [{"test_id": "X", "outcome": "TP"}]
+     cases = [{"test_id": "X", "rule_id": "R", "type": "vulnerable"}]
+-    enrich_rows_with_line_overlap(
+-        rows, cases, rm, tmp_path, backends_have_semgrep_and_http=False
+-    )
++    enrich_rows_with_line_overlap(rows, cases, rm, tmp_path, backends_have_semgrep_and_http=False)
+     assert "line_overlap" not in rows[0]
+ 
+ 
+ def test_safe_case_empty_analyzer_lines(tmp_path: Path) -> None:
+     raw = tmp_path / "raw"
+@@ -96,13 +93,11 @@ def test_safe_case_empty_analyzer_lines(tmp_path: Path) -> None:
+         encoding="utf-8",
+     )
+     cases = [{"test_id": tid, "rule_id": "R1", "type": "safe"}]
+     rows = [{"test_id": tid, "outcome": "TN"}]
+     rm = load_rule_map(mpath)
+-    enrich_rows_with_line_overlap(
+-        rows, cases, rm, raw, backends_have_semgrep_and_http=True
+-    )
++    enrich_rows_with_line_overlap(rows, cases, rm, raw, backends_have_semgrep_and_http=True)
+     lo = rows[0]["line_overlap"]
+     assert lo["analyzer_lines"] == []
+     assert lo["semgrep_lines_in_map"] == [10]
+     assert lo["analyzer_only_lines"] == []
+     assert lo["semgrep_only_lines"] == [10]
+diff --git a/tests/eval/test_corpus_agreement.py b/tests/eval/test_corpus_agreement.py
+index 1b5a698..046105a 100644
+--- a/tests/eval/test_corpus_agreement.py
++++ b/tests/eval/test_corpus_agreement.py
+@@ -1,16 +1,19 @@
+ from __future__ import annotations
+ 
+-from pathlib import Path
++from typing import TYPE_CHECKING
+ 
+ from eval.corpus_agreement import (
+     aggregate_overlap_payloads,
+     buckets_for_policy,
+     overlap_for_file_bucket,
+ )
+ from eval.rule_map import RuleMap
+ 
++if TYPE_CHECKING:
++    from pathlib import Path
++
+ 
+ def _sg(path: Path, check_id: str, line: int) -> dict:
+     return {
+         "check_id": check_id,
+         "path": str(path.resolve()),
+diff --git a/tests/eval/test_corpus_paper_runner.py b/tests/eval/test_corpus_paper_runner.py
+index c8e62b5..d22b2fe 100644
+--- a/tests/eval/test_corpus_paper_runner.py
++++ b/tests/eval/test_corpus_paper_runner.py
+@@ -1,16 +1,18 @@
+ from __future__ import annotations
+ 
+-from pathlib import Path
+-from typing import Any
++from typing import TYPE_CHECKING, Any
+ 
+-import pytest
+ import yaml
+-
+ from eval.corpus_paper_runner import run_paper_eval
+ from eval.rule_map import load_rule_map
+ 
++if TYPE_CHECKING:
++    from pathlib import Path
++
++    import pytest
++
+ 
+ class _FakeResponse:
+     def __init__(self, payload: dict[str, Any]) -> None:
+         self._payload = payload
+ 
+@@ -55,13 +57,11 @@ def test_run_paper_eval_line_overlap_policy_b(
+     )
+     rule_map = load_rule_map(rm_path)
+     cfg = tmp_path / "semgrep.yaml"
+     cfg.write_text("rules: []\n", encoding="utf-8")
+ 
+-    def fake_semgrep(
+-        configs: list[Path], root: Path, *, timeout_sec: int = 3600
+-    ) -> dict[str, Any]:
++    def fake_semgrep(configs: list[Path], root: Path, *, timeout_sec: int = 3600) -> dict[str, Any]:
+         return {
+             "results": [
+                 {
+                     "check_id": "c",
+                     "path": str((root / "f.js").resolve()),
+diff --git a/tests/eval/test_corpus_paths.py b/tests/eval/test_corpus_paths.py
+index 15ce1aa..6d0bf77 100644
+--- a/tests/eval/test_corpus_paths.py
++++ b/tests/eval/test_corpus_paths.py
+@@ -1,13 +1,15 @@
+ from __future__ import annotations
+ 
+-from pathlib import Path
++from typing import TYPE_CHECKING
+ 
+ import pytest
+-
+ from eval.corpus_paths import list_js_ts_relpaths_git, list_js_ts_relpaths_walk
+ 
++if TYPE_CHECKING:
++    from pathlib import Path
++
+ 
+ def test_walk_collects_sorted_unique_relpaths(tmp_path: Path) -> None:
+     (tmp_path / "a.ts").write_text("//", encoding="utf-8")
+     (tmp_path / "sub").mkdir()
+     (tmp_path / "sub" / "b.js").write_text("", encoding="utf-8")
+diff --git a/tests/eval/test_corpus_repro.py b/tests/eval/test_corpus_repro.py
+index 878fc1f..c39cd74 100644
+--- a/tests/eval/test_corpus_repro.py
++++ b/tests/eval/test_corpus_repro.py
+@@ -1,14 +1,17 @@
+ from __future__ import annotations
+ 
+ import hashlib
+-from pathlib import Path
+-
+-import pytest
++from typing import TYPE_CHECKING
+ 
+ from eval.corpus_repro import config_bundle_hashes, semgrep_cli_version, sha256_file
+ 
++if TYPE_CHECKING:
++    from pathlib import Path
++
++    import pytest
++
+ 
+ def test_sha256_file_known_content(tmp_path: Path) -> None:
+     p = tmp_path / "x.bin"
+     data = b"hello-worm"
+     p.write_bytes(data)
+@@ -24,13 +27,11 @@ def test_semgrep_cli_version_monkeypatch(monkeypatch: pytest.MonkeyPatch) -> Non
+             stderr = ""
+ 
+         return R()
+ 
+     monkeypatch.setattr("eval.corpus_repro.subprocess.run", fake_run)
+-    monkeypatch.setattr(
+-        "eval.corpus_repro.semgrep_executable", lambda: "semgrep-fake"
+-    )
++    monkeypatch.setattr("eval.corpus_repro.semgrep_executable", lambda: "semgrep-fake")
+     assert semgrep_cli_version() == "1.2.3-test"
+ 
+ 
+ def test_config_bundle_hashes_single_file(tmp_path: Path) -> None:
+     f = tmp_path / "rules.yaml"
+diff --git a/tests/eval/test_corpus_semgrep_normalize.py b/tests/eval/test_corpus_semgrep_normalize.py
+index 4b42cf4..4d1d135 100644
+--- a/tests/eval/test_corpus_semgrep_normalize.py
++++ b/tests/eval/test_corpus_semgrep_normalize.py
+@@ -1,14 +1,17 @@
+ from __future__ import annotations
+ 
+-from pathlib import Path
++from typing import TYPE_CHECKING
+ 
+ from eval.corpus_semgrep_normalize import (
+     integer_lines_from_semgrep_for_relpath,
+     semgrep_result_relpath,
+ )
+ 
++if TYPE_CHECKING:
++    from pathlib import Path
++
+ 
+ def test_semgrep_result_relpath_under_corpus(tmp_path: Path) -> None:
+     sub = tmp_path / "sub"
+     sub.mkdir()
+     f = sub / "x.js"
+diff --git a/tests/eval/test_dataset_materialize.py b/tests/eval/test_dataset_materialize.py
+index 2351c81..0e2f6e8 100644
+--- a/tests/eval/test_dataset_materialize.py
++++ b/tests/eval/test_dataset_materialize.py
+@@ -1,14 +1,16 @@
+ from __future__ import annotations
+ 
+ import json
+-from pathlib import Path
++from typing import TYPE_CHECKING
+ 
+ import pytest
+-
+ from eval.dataset_materialize import materialize_dataset_csv
+ 
++if TYPE_CHECKING:
++    from pathlib import Path
++
+ 
+ class _FakeResponse:
+     def __init__(self, content: bytes, status: int = 200) -> None:
+         self.content = content
+         self.status_code = status
+diff --git a/tests/eval/test_line_overlap.py b/tests/eval/test_line_overlap.py
+index 35fa3fa..1f40290 100644
+--- a/tests/eval/test_line_overlap.py
++++ b/tests/eval/test_line_overlap.py
+@@ -7,72 +7,58 @@ from eval.line_overlap import (
+     integer_lines_from_semgrep_results,
+ )
+ 
+ 
+ def test_greedy_slop_zero() -> None:
+-    matched, a_only, s_only = greedy_match_lines(
+-        [3, 5], [3], line_slop=0
+-    )
++    matched, a_only, s_only = greedy_match_lines([3, 5], [3], line_slop=0)
+     assert matched == [[3, 3]]
+     assert a_only == [5]
+     assert s_only == []
+ 
+ 
+ def test_greedy_slop_two() -> None:
+-    matched, a_only, s_only = greedy_match_lines(
+-        [5], [7], line_slop=2
+-    )
++    matched, a_only, s_only = greedy_match_lines([5], [7], line_slop=2)
+     assert matched == [[5, 7]]
+     assert a_only == []
+     assert s_only == []
+ 
+-    matched2, a_only2, s_only2 = greedy_match_lines(
+-        [5], [7], line_slop=1
+-    )
++    matched2, a_only2, s_only2 = greedy_match_lines([5], [7], line_slop=1)
+     assert matched2 == []
+     assert a_only2 == [5]
+     assert s_only2 == [7]
+ 
+ 
+ def test_safe_analyzer_empty_allowed_rules() -> None:
+     findings = [{"rule_id": "R1", "line": 10}]
+-    got = integer_lines_from_analyzer_findings(
+-        findings, allowed_rule_ids=frozenset()
+-    )
++    got = integer_lines_from_analyzer_findings(findings, allowed_rule_ids=frozenset())
+     assert got == []
+ 
+ 
+ def test_analyzer_filters_rule_id_and_dedupes() -> None:
+     findings = [
+         {"rule_id": "R1", "line": 3},
+         {"rule_id": "R2", "line": 99},
+         {"rule_id": "R1", "line": 3},
+         {"rule_id": "R1", "line": 5},
+     ]
+-    got = integer_lines_from_analyzer_findings(
+-        findings, allowed_rule_ids=frozenset({"R1"})
+-    )
++    got = integer_lines_from_analyzer_findings(findings, allowed_rule_ids=frozenset({"R1"}))
+     assert got == [3, 5]
+ 
+ 
+ def test_analyzer_drops_non_int_line() -> None:
+     findings = [
+         {"rule_id": "R1", "line": 3},
+         {"rule_id": "R1", "line": None},
+         {"rule_id": "R1"},
+     ]
+-    got = integer_lines_from_analyzer_findings(
+-        findings, allowed_rule_ids=frozenset({"R1"})
+-    )
++    got = integer_lines_from_analyzer_findings(findings, allowed_rule_ids=frozenset({"R1"}))
+     assert got == [3]
+ 
+ 
+ def test_analyzer_accepts_line_start_when_line_absent() -> None:
+     findings = [{"rule_id": "R1", "line_start": 6}]
+-    got = integer_lines_from_analyzer_findings(
+-        findings, allowed_rule_ids=frozenset({"R1"})
+-    )
++    got = integer_lines_from_analyzer_findings(findings, allowed_rule_ids=frozenset({"R1"}))
+     assert got == [6]
+ 
+ 
+ def test_semgrep_filters_check_id_and_stem() -> None:
+     tid = "CASE-01"
+@@ -92,13 +78,11 @@ def test_semgrep_filters_check_id_and_stem() -> None:
+             "check_id": "rule.x",
+             "path": "/tmp/other.py",
+             "start": {"line": 2},
+         },
+     ]
+-    got = integer_lines_from_semgrep_results(
+-        results, test_id=tid, allowed_check_ids=allow
+-    )
++    got = integer_lines_from_semgrep_results(results, test_id=tid, allowed_check_ids=allow)
+     assert got == [2]
+ 
+ 
+ def test_build_line_overlap_payload_shape() -> None:
+     p = build_line_overlap_payload(
+diff --git a/tests/eval/test_semgrep_batch.py b/tests/eval/test_semgrep_batch.py
+index b2b24f5..8cc63c0 100644
+--- a/tests/eval/test_semgrep_batch.py
++++ b/tests/eval/test_semgrep_batch.py
+@@ -1,12 +1,15 @@
+ from __future__ import annotations
+ 
+-from pathlib import Path
++from typing import TYPE_CHECKING
+ from unittest.mock import patch
+ 
+ from eval.backends.semgrep_batch import batch_scan_semgrep
+ 
++if TYPE_CHECKING:
++    from pathlib import Path
++
+ 
+ def test_batch_groups_by_test_id(tmp_path: Path) -> None:
+     cfg = tmp_path / "r"
+     cfg.mkdir()
+     cases = [
+diff --git a/tests/test_api/test_analyze_taint_integration.py b/tests/test_api/test_analyze_taint_integration.py
+index 307af7a..7d2b415 100644
+--- a/tests/test_api/test_analyze_taint_integration.py
++++ b/tests/test_api/test_analyze_taint_integration.py
+@@ -35,13 +35,11 @@ app.get('/', (req, res) => {
+         assert any(f["rule_id"] == "JS-SQL-001" for f in data["findings"])
+ 
+     async def test_prepared_db_query_no_findings_with_taint_enabled(
+         self, client: AsyncClient
+     ) -> None:
+-        source = (
+-            "db.query('SELECT * FROM users WHERE id = $1', [req.query.id]);\n"
+-        )
++        source = "db.query('SELECT * FROM users WHERE id = $1', [req.query.id]);\n"
+         resp = await client.post(
+             "/api/v1/analyze/sync",
+             json={
+                 "source_code": source,
+                 "file_path": "routes.js",
+diff --git a/tests/test_api/test_async_integration.py b/tests/test_api/test_async_integration.py
+index a6f55f1..8aa01da 100644
+--- a/tests/test_api/test_async_integration.py
++++ b/tests/test_api/test_async_integration.py
+@@ -108,13 +108,11 @@ async def test_async_enqueue_worker_persist_poll(client: AsyncClient, fake_redis
+     assert body["status"] == "queued"
+     scan_id = body["scan_id"]
+ 
+     # Source was stored then deleted after successful worker persist.
+     source_keys = [k for k in fake_redis._store if "scan:source:" in k]
+-    assert source_keys == [] or all(
+-        fake_redis._store.get(k) is None for k in source_keys
+-    )
++    assert source_keys == [] or all(fake_redis._store.get(k) is None for k in source_keys)
+ 
+     poll = await client.get(f"/api/v1/results/{scan_id}")
+     assert poll.status_code == 200
+     result = poll.json()
+     assert result["status"] in ("completed", "partial")
+diff --git a/tests/test_api/test_async_results.py b/tests/test_api/test_async_results.py
+index 9c67b97..9442079 100644
+--- a/tests/test_api/test_async_results.py
++++ b/tests/test_api/test_async_results.py
+@@ -7,12 +7,11 @@ from httpx import ASGITransport, AsyncClient
+ 
+ from analyzer.api.dependencies import get_redis_client
+ from analyzer.api.schemas import AnalyzeResponse, ScanStats
+ from analyzer.config import Settings, get_settings
+ from analyzer.main import create_app
+-from analyzer.models.base import Base, get_engine, reset_engine
+-from analyzer.models.base import get_session_factory
++from analyzer.models.base import Base, get_engine, get_session_factory, reset_engine
+ from analyzer.services.scan_repository import create_scan, mark_failed, save_analyze_response
+ 
+ 
+ @pytest.fixture
+ def sqlite_db(monkeypatch: pytest.MonkeyPatch, tmp_path):
+@@ -42,13 +41,11 @@ async def client_with_redis(mock_redis: MagicMock, sqlite_db):
+ def mock_redis() -> MagicMock:
+     return MagicMock()
+ 
+ 
+ class TestGetResults:
+-    async def test_unknown_scan_returns_404(
+-        self, client_with_redis: AsyncClient
+-    ):
++    async def test_unknown_scan_returns_404(self, client_with_redis: AsyncClient):
+         sid = str(uuid4())
+         resp = await client_with_redis.get(f"/api/v1/results/{sid}")
+         assert resp.status_code == 404
+ 
+     async def test_invalid_uuid_returns_404(self, client_with_redis: AsyncClient):
+diff --git a/tests/test_core/test_orchestrator_bundle.py b/tests/test_core/test_orchestrator_bundle.py
+index 9beff98..835149b 100644
+--- a/tests/test_core/test_orchestrator_bundle.py
++++ b/tests/test_core/test_orchestrator_bundle.py
+@@ -64,13 +64,11 @@ app.get('/x', (req, res) => {
+             files={"evil.js": evil, "safe.js": safe, "app.js": app},
+             config=ScanConfig(enable_taint=True),
+         )
+     )
+     high_sql = [
+-        f
+-        for f in resp.findings
+-        if f.rule_id == "JS-SQL-001" and f.confidence.value == "high"
++        f for f in resp.findings if f.rule_id == "JS-SQL-001" and f.confidence.value == "high"
+     ]
+     assert not high_sql, "must not execute evil.js queryUser via name collision"
+ 
+ 
+ def test_bundle_finds_nosql_spread_case() -> None:
+diff --git a/tests/test_taint/test_js_taint.py b/tests/test_taint/test_js_taint.py
+index a039621..9cbeb8a 100644
+--- a/tests/test_taint/test_js_taint.py
++++ b/tests/test_taint/test_js_taint.py
+@@ -81,12 +81,11 @@ app.get('/x', (req, res) => {
+                 file_path="app.js",
+                 config=ScanConfig(enable_taint=True),
+             )
+         )
+         assert any(
+-            f.rule_id == "JS-SQL-001" and f.confidence.value == "high"
+-            for f in resp.findings
++            f.rule_id == "JS-SQL-001" and f.confidence.value == "high" for f in resp.findings
+         )
+ 
+     def test_res_send_taint_maps_to_xss_003(self) -> None:
+         code = """
+ app.get('/x', (req, res) => {
+@@ -100,8 +99,7 @@ app.get('/x', (req, res) => {
+                 file_path="app.js",
+                 config=ScanConfig(enable_taint=True),
+             )
+         )
+         assert any(
+-            f.rule_id == "JS-XSS-003" and f.confidence.value == "high"
+-            for f in resp.findings
++            f.rule_id == "JS-XSS-003" and f.confidence.value == "high" for f in resp.findings
+         )
+diff --git a/tests/test_taint/test_module_graph.py b/tests/test_taint/test_module_graph.py
+index 68a7630..83ac739 100644
+--- a/tests/test_taint/test_module_graph.py
++++ b/tests/test_taint/test_module_graph.py
+@@ -23,8 +23,6 @@ def test_bundle_resolves_require_export() -> None:
+         AnalyzeBundleRequest(
+             files={"db.js": HELPER, "app.js": APP},
+             config=ScanConfig(enable_taint=True),
+         )
+     )
+-    assert any(
+-        f.rule_id == "JS-SQL-001" and f.confidence.value == "high" for f in resp.findings
+-    )
++    assert any(f.rule_id == "JS-SQL-001" and f.confidence.value == "high" for f in resp.findings)
+diff --git a/tests/test_taint/test_taint_nosql_ssrf.py b/tests/test_taint/test_taint_nosql_ssrf.py
+index 896736b..519a976 100644
+--- a/tests/test_taint/test_taint_nosql_ssrf.py
++++ b/tests/test_taint/test_taint_nosql_ssrf.py
+@@ -88,8 +88,6 @@ def test_axios_delete_maps_to_ssrf_rule() -> None:
+ """
+     orch = Orchestrator(Settings())
+     resp = orch.analyze_bundle_sync(
+         AnalyzeBundleRequest(files={"app.js": code}, config=ScanConfig(enable_taint=True))
+     )
+-    assert any(
+-        f.rule_id == "JS-SSRF-001" and f.confidence.value == "high" for f in resp.findings
+-    )
++    assert any(f.rule_id == "JS-SSRF-001" and f.confidence.value == "high" for f in resp.findings)
+
+## New file: .github/workflows/ci.yml
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - name: Ruff check
+        run: ruff check src tests eval
+      - name: Ruff format
+        run: ruff format --check src tests eval
+      - name: Mypy
+        run: mypy src/analyzer
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - name: pip-audit
+        run: pip-audit
+      - name: Pytest
+        run: pytest tests/ -q --cov=src/analyzer --cov-report=term-missing
+
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - name: In-process catalog eval
+        run: |
+          python - <<'PY'
+          import json
+          from eval.catalog_loader import load_catalog
+          from eval.catalog_runner import run_catalog_inprocess
+          from eval.metrics import global_counts, precision_recall_f1
+          rows = run_catalog_inprocess(load_catalog())
+          counts = global_counts(rows)
+          p, r, f1 = precision_recall_f1(counts["TP"], counts["FP"], counts["FN"])
+          print(json.dumps({"counts": counts, "precision": p, "recall": r, "f1": f1}))
+          assert counts["FN"] == 0, f"FN regression: {counts['FN']}"
+          assert counts["FP"] <= 10, f"FP budget exceeded: {counts['FP']}"
+          PY
+

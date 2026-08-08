@@ -157,8 +157,7 @@ def analyze_async(
         raise HTTPException(
             status_code=413,
             detail=(
-                f"Source too large for async analysis. "
-                f"Max: {settings.max_source_bytes} bytes."
+                f"Source too large for async analysis. Max: {settings.max_source_bytes} bytes."
             ),
         )
     scan_id = str(uuid4())
@@ -213,9 +212,7 @@ def analyze_async(
         factory = get_session_factory()
         session = factory()
         try:
-            err_code = (
-                "redis_unavailable" if isinstance(e, redis.RedisError) else "enqueue_failed"
-            )
+            err_code = "redis_unavailable" if isinstance(e, redis.RedisError) else "enqueue_failed"
             mark_failed(
                 session,
                 scan_id,
@@ -249,9 +246,7 @@ def get_results(
     factory = get_session_factory()
     session = factory()
     try:
-        stale_after = settings.scan_stale_after_seconds or (
-            settings.celery_time_limit_seconds + 60
-        )
+        stale_after = settings.scan_stale_after_seconds or (settings.celery_time_limit_seconds + 60)
         fail_stale_scan(session, scan_id, older_than_seconds=stale_after)
         scan = get_scan(session, scan_id)
         if scan is None:

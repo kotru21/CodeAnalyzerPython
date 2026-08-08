@@ -34,10 +34,7 @@ app.get('/x', (req, res) => {
   svc.run(req.query.id);
 });""",
             "CWE-89",
-            (
-                "Вызов obj.method(req): ограничение taint; "
-                "AST может всё ещё дать finding"
-            ),
+            ("Вызов obj.method(req): ограничение taint; AST может всё ещё дать finding"),
             tags=["special:taint-boundary"],
         ),
         mk(

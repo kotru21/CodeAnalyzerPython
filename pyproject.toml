@@ -29,6 +29,8 @@ dev = [
     "pytest-cov>=7.0",
     "ruff>=0.16",
     "mypy>=2.0",
+    "pip-audit>=2.9",
+    "pre-commit>=4.0",
 ]
 
 [build-system]
@@ -43,8 +45,16 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 pythonpath = ["src", "."]
 
+[tool.coverage.run]
+source = ["analyzer"]
+branch = false
+
+[tool.coverage.report]
+fail_under = 84
+show_missing = true
+
 [tool.ruff]
-# Syntax/lint baseline; runtime and CI use 3.14 (see Dockerfile / eval.yml).
+# Syntax/lint baseline; runtime and CI use 3.14 (see Dockerfile / ci.yml).
 target-version = "py312"
 line-length = 100
 src = ["src", "tests", "eval"]

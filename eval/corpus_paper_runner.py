@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import sys
 from collections import defaultdict
-from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
 
@@ -20,16 +19,16 @@ from eval.corpus_paths import (
 )
 from eval.corpus_repro import config_bundle_hashes, semgrep_cli_version
 from eval.corpus_semgrep_normalize import semgrep_result_relpath
-from eval.rule_map import RuleMap
 
-POLICY_B_NOTE = (
-    "check_id filter: none (all Semgrep results per file under given --semgrep-config)"
-)
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from eval.rule_map import RuleMap
+
+POLICY_B_NOTE = "check_id filter: none (all Semgrep results per file under given --semgrep-config)"
 
 
-def _environment_fields(
-    note: str | None, out_of_scope_flag: bool
-) -> tuple[str | None, bool]:
+def _environment_fields(note: str | None, out_of_scope_flag: bool) -> tuple[str | None, bool]:
     if out_of_scope_flag:
         return note, True
     if note:
@@ -72,9 +71,7 @@ def run_paper_eval(
             if relpaths_override is None
             else list(relpaths_override)
         )
-        fur = file_universe_rule or (
-            "walk:rglob_ext=" + ",".join(sorted(DEFAULT_JS_TS_EXTENSIONS))
-        )
+        fur = file_universe_rule or ("walk:rglob_ext=" + ",".join(sorted(DEFAULT_JS_TS_EXTENSIONS)))
     else:
         relpaths = (
             list_js_ts_relpaths_git(corpus)
@@ -109,9 +106,7 @@ def run_paper_eval(
                 continue
             if allow is not None and check not in allow:
                 continue
-            rp = semgrep_result_relpath(
-                corpus, str(r.get("path")) if r.get("path") else None
-            )
+            rp = semgrep_result_relpath(corpus, str(r.get("path")) if r.get("path") else None)
             if rp not in files_set:
                 continue
             start = r.get("start")
@@ -182,9 +177,7 @@ def run_paper_eval(
 
     flat_payloads = [p for lst in per_bucket_payloads.values() for p in lst]
     agg = aggregate_overlap_payloads(flat_payloads)
-    by_bucket = {
-        b: aggregate_overlap_payloads(lst) for b, lst in per_bucket_payloads.items()
-    }
+    by_bucket = {b: aggregate_overlap_payloads(lst) for b, lst in per_bucket_payloads.items()}
 
     hashes = config_bundle_hashes(configs)
     semgrep_argv = ["scan", "--json", "--quiet"]

@@ -1,0 +1,499 @@
+﻿# Whole-branch review package (uncommitted working tree vs b51bd59ca7846d4da4b5facaa988ac335d6b6190)
+## Commits
+(none — human forbade commits)
+
+## Status
+ D .github/workflows/eval.yml
+ M .gitignore
+ M README.md
+ M eval/backends/semgrep_batch.py
+ M eval/backends/semgrep_case.py
+ M eval/cases_pack/f_special.py
+ M eval/catalog_runner.py
+ M eval/classify.py
+ M eval/compare_enrich.py
+ M eval/corpus_agreement.py
+ M eval/corpus_paper_runner.py
+ M eval/corpus_paths.py
+ M eval/corpus_repro.py
+ M eval/dataset_materialize.py
+ M eval/finding_match.py
+ M eval/line_overlap.py
+ M eval/metrics.py
+ M eval/rule_map.py
+ M pyproject.toml
+ M src/analyzer/api/router.py
+ M src/analyzer/core/injection_rules.py
+ M src/analyzer/core/orchestrator.py
+ M src/analyzer/export/sarif.py
+ M src/analyzer/services/scan_repository.py
+ M src/analyzer/taint/module_graph.py
+ M src/analyzer/taint/sanitizers.py
+ M src/analyzer/taint/sources_sinks.py
+ M src/analyzer/taint/tracker.py
+ M src/analyzer/workers/tasks.py
+ M tests/eval/test_compare_enrich.py
+ M tests/eval/test_corpus_agreement.py
+ M tests/eval/test_corpus_paper_runner.py
+ M tests/eval/test_corpus_paths.py
+ M tests/eval/test_corpus_repro.py
+ M tests/eval/test_corpus_semgrep_normalize.py
+ M tests/eval/test_dataset_materialize.py
+ M tests/eval/test_line_overlap.py
+ M tests/eval/test_semgrep_batch.py
+ M tests/test_api/test_analyze_taint_integration.py
+ M tests/test_api/test_async_integration.py
+ M tests/test_api/test_async_results.py
+ M tests/test_core/test_orchestrator_bundle.py
+ M tests/test_taint/test_js_taint.py
+ M tests/test_taint/test_module_graph.py
+ M tests/test_taint/test_taint_nosql_ssrf.py
+?? .github/workflows/ci.yml
+?? .pre-commit-config.yaml
+?? .superpowers/
+?? scripts/ci_docker_smoke.sh
+
+## Stat vs HEAD
+
+ .github/workflows/eval.yml                       |  34 ------
+ .gitignore                                       |   4 +
+ README.md                                        |  25 ++++-
+ eval/backends/semgrep_batch.py                   |   4 +-
+ eval/backends/semgrep_case.py                    |   4 +-
+ eval/cases_pack/f_special.py                     |   5 +-
+ eval/catalog_runner.py                           |  26 ++---
+ eval/classify.py                                 |  12 +--
+ eval/compare_enrich.py                           |  10 +-
+ eval/corpus_agreement.py                         |   9 +-
+ eval/corpus_paper_runner.py                      |  29 ++---
+ eval/corpus_paths.py                             |   4 +-
+ eval/corpus_repro.py                             |   5 +-
+ eval/dataset_materialize.py                      |   6 +-
+ eval/finding_match.py                            |   9 +-
+ eval/line_overlap.py                             |   2 +-
+ eval/metrics.py                                  |   6 +-
+ eval/rule_map.py                                 |   8 +-
+ pyproject.toml                                   |  10 ++
+ src/analyzer/api/router.py                       |  11 +-
+ src/analyzer/core/injection_rules.py             |  17 ++-
+ src/analyzer/core/orchestrator.py                |  36 ++-----
+ src/analyzer/export/sarif.py                     |   2 +-
+ src/analyzer/services/scan_repository.py         |   8 +-
+ src/analyzer/taint/module_graph.py               |  23 ++--
+ src/analyzer/taint/sanitizers.py                 |   8 +-
+ src/analyzer/taint/sources_sinks.py              | 132 ++++++++++++-----------
+ src/analyzer/taint/tracker.py                    |  53 +++------
+ src/analyzer/workers/tasks.py                    |   4 +-
+ tests/eval/test_compare_enrich.py                |  21 ++--
+ tests/eval/test_corpus_agreement.py              |   5 +-
+ tests/eval/test_corpus_paper_runner.py           |  14 +--
+ tests/eval/test_corpus_paths.py                  |   6 +-
+ tests/eval/test_corpus_repro.py                  |  13 +--
+ tests/eval/test_corpus_semgrep_normalize.py      |   5 +-
+ tests/eval/test_dataset_materialize.py           |   6 +-
+ tests/eval/test_line_overlap.py                  |  32 ++----
+ tests/eval/test_semgrep_batch.py                 |   5 +-
+ tests/test_api/test_analyze_taint_integration.py |   4 +-
+ tests/test_api/test_async_integration.py         |   4 +-
+ tests/test_api/test_async_results.py             |   7 +-
+ tests/test_core/test_orchestrator_bundle.py      |   4 +-
+ tests/test_taint/test_js_taint.py                |   6 +-
+ tests/test_taint/test_module_graph.py            |   4 +-
+ tests/test_taint/test_taint_nosql_ssrf.py        |   4 +-
+ 45 files changed, 269 insertions(+), 377 deletions(-)
+
+## Key new/deleted files contents summary
+
+
+### .github/workflows/ci.yml
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - name: Ruff check
+        run: ruff check src tests eval
+      - name: Ruff format
+        run: ruff format --check src tests eval
+      - name: Mypy
+        run: mypy src/analyzer
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - name: pip-audit
+        run: pip-audit
+      - name: Pytest
+        run: pytest tests/ -q --cov=src/analyzer --cov-report=term-missing
+
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - name: In-process catalog eval
+        run: |
+          python - <<'PY'
+          import json
+          from eval.catalog_loader import load_catalog
+          from eval.catalog_runner import run_catalog_inprocess
+          from eval.metrics import global_counts, precision_recall_f1
+          rows = run_catalog_inprocess(load_catalog())
+          counts = global_counts(rows)
+          p, r, f1 = precision_recall_f1(counts["TP"], counts["FP"], counts["FN"])
+          print(json.dumps({"counts": counts, "precision": p, "recall": r, "f1": f1}))
+          assert counts["FN"] == 0, f"FN regression: {counts['FN']}"
+          assert counts["FP"] <= 10, f"FP budget exceeded: {counts['FP']}"
+          PY
+
+  docker:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: analyzer
+          POSTGRES_PASSWORD: ci-postgres
+          POSTGRES_DB: analyzer
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U analyzer"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v3
+      - name: Docker smoke
+        env:
+          IMAGE: analyzer-ci:local
+          POSTGRES_PASSWORD: ci-postgres
+          REDIS_PASSWORD: ""
+          ANALYZER_API_KEY: ci-smoke-key
+        run: bash scripts/ci_docker_smoke.sh
+
+
+### .pre-commit-config.yaml
+
+# Mirrors CI jobs quality + test. Catalog eval and Docker smoke stay CI-only.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.2
+    hooks:
+      - id: ruff
+        files: ^(src|tests|eval)/
+      - id: ruff-format
+        files: ^(src|tests|eval)/
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: python -m mypy src/analyzer
+        language: system
+        pass_filenames: false
+        types: [python]
+      - id: pip-audit
+        name: pip-audit
+        entry: python -m pip_audit
+        language: system
+        pass_filenames: false
+      - id: pytest-cov
+        name: pytest with coverage ratchet
+        entry: python -m pytest tests/ -q --cov=src/analyzer --cov-report=term-missing
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+
+
+### scripts/ci_docker_smoke.sh
+
+#!/usr/bin/env bash
+# CI Docker smoke: build в†’ alembic upgrade в†’ API /api/v1/health.
+# Expects Postgres and Redis on 127.0.0.1 (GitHub Actions service containers).
+set -euo pipefail
+
+IMAGE="${IMAGE:-analyzer-ci:local}"
+POSTGRES_USER="${POSTGRES_USER:-analyzer}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-ci-postgres}"
+POSTGRES_DB="${POSTGRES_DB:-analyzer}"
+REDIS_PASSWORD="${REDIS_PASSWORD-}"
+API_KEY="${ANALYZER_API_KEY:-ci-smoke-key}"
+
+DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:5432/${POSTGRES_DB}"
+if [[ -n "${REDIS_PASSWORD}" ]]; then
+  REDIS_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0"
+  BROKER_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/1"
+  RESULT_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/2"
+else
+  REDIS_URL="redis://127.0.0.1:6379/0"
+  BROKER_URL="redis://127.0.0.1:6379/1"
+  RESULT_URL="redis://127.0.0.1:6379/2"
+fi
+
+echo "==> Building ${IMAGE}"
+docker build -t "${IMAGE}" .
+
+COMMON_ENV=(
+  -e "ANALYZER_DATABASE_URL=${DATABASE_URL}"
+  -e "ANALYZER_REDIS_URL=${REDIS_URL}"
+  -e "ANALYZER_CELERY_BROKER_URL=${BROKER_URL}"
+  -e "ANALYZER_CELERY_RESULT_BACKEND=${RESULT_URL}"
+  -e "ANALYZER_API_KEY=${API_KEY}"
+  -e "ANALYZER_DEBUG=false"
+  -e "ANALYZER_RATE_LIMIT_PER_MINUTE=0"
+  -e "ANALYZER_RATE_LIMIT_SYNC_PER_MINUTE=0"
+)
+
+echo "==> alembic upgrade head"
+docker run --rm --network host "${COMMON_ENV[@]}" "${IMAGE}" alembic upgrade head
+
+echo "==> starting API"
+cid="$(docker run -d --network host "${COMMON_ENV[@]}" "${IMAGE}")"
+cleanup() {
+  docker logs "${cid}" || true
+  docker rm -f "${cid}" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+echo "==> waiting for /api/v1/health"
+ok=0
+for i in $(seq 1 30); do
+  if body="$(curl -fsS "http://127.0.0.1:8000/api/v1/health" 2>/dev/null)"; then
+    echo "${body}"
+    status_ok=0
+    if echo "${body}" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"healthy"'; then
+      status_ok=1
+    fi
+    db_ok=0
+    if echo "${body}" | grep -Eq '"database"[[:space:]]*:[[:space:]]*"ok"'; then
+      db_ok=1
+    fi
+    if [[ "${status_ok}" -eq 1 && "${db_ok}" -eq 1 ]]; then
+      ok=1
+      break
+    fi
+  fi
+  sleep 2
+done
+
+if [[ "${ok}" -ne 1 ]]; then
+  echo "Health smoke failed" >&2
+  exit 1
+fi
+
+echo "==> docker smoke OK"
+
+### eval.yml present?
+
+False
+
+## Diff tracked files vs HEAD
+
+diff --git a/.github/workflows/eval.yml b/.github/workflows/eval.yml
+deleted file mode 100644
+index f0bca46..0000000
+--- a/.github/workflows/eval.yml
++++ /dev/null
+@@ -1,34 +0,0 @@
+-name: Eval Catalog
+-on:
+-  push:
+-    branches: [main, master]
+-  pull_request:
+-
+-jobs:
+-  eval:
+-    runs-on: ubuntu-latest
+-    steps:
+-      - uses: actions/checkout@v7
+-      - uses: actions/setup-python@v7
+-        with:
+-          python-version: "3.14"
+-      - run: pip install -e ".[dev]"
+-      - name: Ruff
+-        run: ruff check src/analyzer
+-      - name: Mypy
+-        run: mypy src/analyzer
+-      - run: pytest tests/ -q --cov=src/analyzer --cov-report=term-missing
+-      - name: In-process catalog eval
+-        run: |
+-          python - <<'PY'
+-          import json
+-          from eval.catalog_loader import load_catalog
+-          from eval.catalog_runner import run_catalog_inprocess
+-          from eval.metrics import global_counts, precision_recall_f1
+-          rows = run_catalog_inprocess(load_catalog())
+-          counts = global_counts(rows)
+-          p, r, f1 = precision_recall_f1(counts["TP"], counts["FP"], counts["FN"])
+-          print(json.dumps({"counts": counts, "precision": p, "recall": r, "f1": f1}))
+-          assert counts["FN"] == 0, f"FN regression: {counts['FN']}"
+-          assert counts["FP"] <= 10, f"FP budget exceeded: {counts['FP']}"
+-          PY
+diff --git a/.gitignore b/.gitignore
+index 60d645a..f2941b3 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -19,10 +19,14 @@ htmlcov/
+ # Git worktrees
+ .worktrees/
+ 
+ .cursor/
+ 
++# Local design/plan docs (brainstorming); keep out of git
++docs/superpowers/specs/
++docs/superpowers/plans/
++
+ eval/results/*.json
+ eval/results/report.md
+ eval/results/raw/
+ eval/results/compare_summary.json
+ !eval/results/.gitkeep
+diff --git a/README.md b/README.md
+index 430a01c..0b51623 100644
+--- a/README.md
++++ b/README.md
+@@ -1,8 +1,8 @@
+ # Analyzer Service
+ 
+-[![Eval Catalog](https://github.com/kotru21/CodeAnalyzerPython/actions/workflows/eval.yml/badge.svg)](https://github.com/kotru21/CodeAnalyzerPython/actions/workflows/eval.yml)
++[![CI](https://github.com/kotru21/CodeAnalyzerPython/actions/workflows/ci.yml/badge.svg)](https://github.com/kotru21/CodeAnalyzerPython/actions/workflows/ci.yml)
+ [![Python](https://img.shields.io/badge/python-3.12%2B%20%7C%20CI%2FDocker%203.14-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
+ [![FastAPI](https://img.shields.io/badge/FastAPI-0.141+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+ [![Celery](https://img.shields.io/badge/Celery-Redis%20broker-37B24D?logo=celery&logoColor=white)](https://docs.celeryq.dev/)
+ [![Ruff](https://img.shields.io/badge/linter-ruff-D7FF64?logo=ruff&logoColor=black)](https://docs.astral.sh/ruff/)
+ [![mypy](https://img.shields.io/badge/types-mypy-blue)](https://mypy-lang.org/)
+@@ -33,10 +33,31 @@ Postgres and Redis are **not** published to the host (internal Docker network on
+ 
+ ```bash
+ pytest tests/ -v
+ ```
+ 
++### Pre-commit
++
++```bash
++pip install -e ".[dev]"
++pre-commit install
++pre-commit run --all-files
++```
++
++Hooks mirror CI **quality** + **test** (ruff, format, mypy, pip-audit, pytest + 84% coverage floor). Catalog eval and Docker smoke run only in GitHub Actions.
++
++### CI jobs
++
++| Job | What it runs |
++|-----|----------------|
++| `quality` | `ruff check` / `ruff format --check` on `src` `tests` `eval`; `mypy src/analyzer` |
++| `test` | `pip-audit`; `pytest` with coverage fail-under 84% |
++| `eval` | In-process catalog gate (`FN == 0`, `FP <= 10`) |
++| `docker` | Image build, `alembic upgrade head`, `GET /api/v1/health` vs Postgres+Redis |
++
++Enable branch protection on `main` to require all four checks.
++
+ ## API Endpoints
+ 
+ | Method | Path | Description |
+ |--------|------|-------------|
+ | POST | `/api/v1/analyze/sync` | Synchronous analysis (< 50 KB); JSON or SARIF (see below) |
+@@ -256,11 +277,11 @@ Example:
+ 
+ `eval/results/*.json` and `report.md` are gitignored; committed sources live under `eval/catalog/` and `eval/cases_pack/`.
+ 
+ ### Current catalog compare vs Semgrep
+ 
+-**In-process catalog gate (CI):** `run_catalog_inprocess(load_catalog())` тАФ current gold outcomes **TP 52 / TN 37 / FN 0 / FP 7** (refreshed **2026-08-08**, includes `h_realworld` Nest/Next snippets). CI fails if `FN > 0` or `FP > 10`.
++**In-process catalog gate (CI `eval` job):** `run_catalog_inprocess(load_catalog())` тАФ current gold outcomes **TP 52 / TN 37 / FN 0 / FP 7** (refreshed **2026-08-08**, includes `h_realworld` Nest/Next snippets). CI fails if `FN > 0` or `FP > 10`.
+ 
+ Historical Semgrep **`eval.cli compare`** numbers (HTTP vs Semgrep line overlap on the same catalog) from **2026-03-26** are outdated relative to the in-process gate; re-run compare locally to refresh Semgrep agreement stats (`compare_summary.json` is gitignored).
+ 
+ ### Current `corpus_paper_eval` run (example: `semgrep-rules` `javascript/`)
+ 
+diff --git a/pyproject.toml b/pyproject.toml
+index 897bc65..7685014 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -27,10 +27,12 @@ dev = [
+     "pytest>=9.0",
+     "pytest-asyncio>=1.0",
+     "pytest-cov>=7.0",
+     "ruff>=0.16",
+     "mypy>=2.0",
++    "pip-audit>=2.9",
++    "pre-commit>=4.0",
+ ]
+ 
+ [build-system]
+ requires = ["setuptools>=75.0"]
+ build-backend = "setuptools.build_meta"
+@@ -41,10 +43,18 @@ where = ["src"]
+ [tool.pytest.ini_options]
+ testpaths = ["tests"]
+ asyncio_mode = "auto"
+ pythonpath = ["src", "."]
+ 
++[tool.coverage.run]
++source = ["analyzer"]
++branch = false
++
++[tool.coverage.report]
++fail_under = 84
++show_missing = true
++
+ [tool.ruff]
+ # Syntax/lint baseline; runtime and CI use 3.14 (see Dockerfile / eval.yml).
+ target-version = "py312"
+ line-length = 100
+ src = ["src", "tests", "eval"]
+
+## eval.yml DELETED (was at HEAD)
+
+name: Eval Catalog
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+
+## Minor findings ledger from task reviews
+
+- Task2: smoke script missing trailing newline; git mode 100644 not 100755; possible arrow mojibake in comment
+- Task5: pyproject.toml comment still references eval.yml
+- Coverage margin tight 84.11% vs 84
+- GHA docker job not verified locally

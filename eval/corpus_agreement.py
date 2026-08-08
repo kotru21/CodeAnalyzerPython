@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from eval.corpus_semgrep_normalize import integer_lines_from_semgrep_for_relpath
 from eval.line_overlap import build_line_overlap_payload, integer_lines_from_analyzer_findings
-from eval.rule_map import RuleMap
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from eval.rule_map import RuleMap
 
 
 def buckets_for_policy(policy: Literal["a", "b"], rule_map: RuleMap) -> list[str]:

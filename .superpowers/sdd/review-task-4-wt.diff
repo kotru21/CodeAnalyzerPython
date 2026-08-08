@@ -1,0 +1,133 @@
+﻿# Review package: Task 4 — docker job addition
+## Commits
+(none)
+
+## ci.yml full content (verify docker job)
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - name: Ruff check
+        run: ruff check src tests eval
+      - name: Ruff format
+        run: ruff format --check src tests eval
+      - name: Mypy
+        run: mypy src/analyzer
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - name: pip-audit
+        run: pip-audit
+      - name: Pytest
+        run: pytest tests/ -q --cov=src/analyzer --cov-report=term-missing
+
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - name: In-process catalog eval
+        run: |
+          python - <<'PY'
+          import json
+          from eval.catalog_loader import load_catalog
+          from eval.catalog_runner import run_catalog_inprocess
+          from eval.metrics import global_counts, precision_recall_f1
+          rows = run_catalog_inprocess(load_catalog())
+          counts = global_counts(rows)
+          p, r, f1 = precision_recall_f1(counts["TP"], counts["FP"], counts["FN"])
+          print(json.dumps({"counts": counts, "precision": p, "recall": r, "f1": f1}))
+          assert counts["FN"] == 0, f"FN regression: {counts['FN']}"
+          assert counts["FP"] <= 10, f"FP budget exceeded: {counts['FP']}"
+          PY
+
+  docker:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: analyzer
+          POSTGRES_PASSWORD: ci-postgres
+          POSTGRES_DB: analyzer
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U analyzer"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v3
+      - name: Docker smoke
+        env:
+          IMAGE: analyzer-ci:local
+          POSTGRES_PASSWORD: ci-postgres
+          REDIS_PASSWORD: ""
+          ANALYZER_API_KEY: ci-smoke-key
+        run: bash scripts/ci_docker_smoke.sh
+
+
+## Smoke script Redis password section
+
+
+> scripts\ci_docker_smoke.sh:3:# Expects Postgres and Redis on 127.0.0.1 (GitHub Actions service containers).
+  scripts\ci_docker_smoke.sh:4:set -euo pipefail
+  scripts\ci_docker_smoke.sh:5:
+> scripts\ci_docker_smoke.sh:10:REDIS_PASSWORD="${REDIS_PASSWORD-}"
+  scripts\ci_docker_smoke.sh:11:API_KEY="${ANALYZER_API_KEY:-ci-smoke-key}"
+  scripts\ci_docker_smoke.sh:12:
+> scripts\ci_docker_smoke.sh:14:if [[ -n "${REDIS_PASSWORD}" ]]; then
+> scripts\ci_docker_smoke.sh:15:  REDIS_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0"
+> scripts\ci_docker_smoke.sh:16:  BROKER_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/1"
+> scripts\ci_docker_smoke.sh:17:  RESULT_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/2"
+  scripts\ci_docker_smoke.sh:18:else
+> scripts\ci_docker_smoke.sh:19:  REDIS_URL="redis://127.0.0.1:6379/0"
+> scripts\ci_docker_smoke.sh:20:  BROKER_URL="redis://127.0.0.1:6379/1"
+> scripts\ci_docker_smoke.sh:21:  RESULT_URL="redis://127.0.0.1:6379/2"
+  scripts\ci_docker_smoke.sh:22:fi
+  scripts\ci_docker_smoke.sh:23:
+> scripts\ci_docker_smoke.sh:29:  -e "ANALYZER_REDIS_URL=${REDIS_URL}"
+  scripts\ci_docker_smoke.sh:30:  -e "ANALYZER_CELERY_BROKER_URL=${BROKER_URL}"
+  scripts\ci_docker_smoke.sh:31:  -e "ANALYZER_CELERY_RESULT_BACKEND=${RESULT_URL}"
+
+
+

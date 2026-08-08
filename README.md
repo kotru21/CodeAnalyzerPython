@@ -1,6 +1,6 @@
 # Analyzer Service
 
-[![Eval Catalog](https://github.com/kotru21/CodeAnalyzerPython/actions/workflows/eval.yml/badge.svg)](https://github.com/kotru21/CodeAnalyzerPython/actions/workflows/eval.yml)
+[![CI](https://github.com/kotru21/CodeAnalyzerPython/actions/workflows/ci.yml/badge.svg)](https://github.com/kotru21/CodeAnalyzerPython/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12%2B%20%7C%20CI%2FDocker%203.14-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.141+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Celery](https://img.shields.io/badge/Celery-Redis%20broker-37B24D?logo=celery&logoColor=white)](https://docs.celeryq.dev/)
@@ -34,6 +34,27 @@ Postgres and Redis are **not** published to the host (internal Docker network on
 ```bash
 pytest tests/ -v
 ```
+
+### Pre-commit
+
+```bash
+pip install -e ".[dev]"
+pre-commit install
+pre-commit run --all-files
+```
+
+Hooks mirror CI **quality** + **test** (ruff, format, mypy, pip-audit, pytest + 84% coverage floor). Catalog eval and Docker smoke run only in GitHub Actions.
+
+### CI jobs
+
+| Job | What it runs |
+|-----|----------------|
+| `quality` | `ruff check` / `ruff format --check` on `src` `tests` `eval`; `mypy src/analyzer` |
+| `test` | `pip-audit`; `pytest` with coverage fail-under 84% |
+| `eval` | In-process catalog gate (`FN == 0`, `FP <= 10`) |
+| `docker` | Image build, `alembic upgrade head`, `GET /api/v1/health` vs Postgres+Redis |
+
+Enable branch protection on `main` to require all four checks.
 
 ## API Endpoints
 
@@ -258,7 +279,7 @@ Example:
 
 ### Current catalog compare vs Semgrep
 
-**In-process catalog gate (CI):** `run_catalog_inprocess(load_catalog())` — current gold outcomes **TP 52 / TN 37 / FN 0 / FP 7** (refreshed **2026-08-08**, includes `h_realworld` Nest/Next snippets). CI fails if `FN > 0` or `FP > 10`.
+**In-process catalog gate (CI `eval` job):** `run_catalog_inprocess(load_catalog())` — current gold outcomes **TP 52 / TN 37 / FN 0 / FP 7** (refreshed **2026-08-08**, includes `h_realworld` Nest/Next snippets). CI fails if `FN > 0` or `FP > 10`.
 
 Historical Semgrep **`eval.cli compare`** numbers (HTTP vs Semgrep line overlap on the same catalog) from **2026-03-26** are outdated relative to the in-process gate; re-run compare locally to refresh Semgrep agreement stats (`compare_summary.json` is gitignored).
 

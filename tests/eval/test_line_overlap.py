@@ -9,25 +9,19 @@ from eval.line_overlap import (
 
 
 def test_greedy_slop_zero() -> None:
-    matched, a_only, s_only = greedy_match_lines(
-        [3, 5], [3], line_slop=0
-    )
+    matched, a_only, s_only = greedy_match_lines([3, 5], [3], line_slop=0)
     assert matched == [[3, 3]]
     assert a_only == [5]
     assert s_only == []
 
 
 def test_greedy_slop_two() -> None:
-    matched, a_only, s_only = greedy_match_lines(
-        [5], [7], line_slop=2
-    )
+    matched, a_only, s_only = greedy_match_lines([5], [7], line_slop=2)
     assert matched == [[5, 7]]
     assert a_only == []
     assert s_only == []
 
-    matched2, a_only2, s_only2 = greedy_match_lines(
-        [5], [7], line_slop=1
-    )
+    matched2, a_only2, s_only2 = greedy_match_lines([5], [7], line_slop=1)
     assert matched2 == []
     assert a_only2 == [5]
     assert s_only2 == [7]
@@ -35,9 +29,7 @@ def test_greedy_slop_two() -> None:
 
 def test_safe_analyzer_empty_allowed_rules() -> None:
     findings = [{"rule_id": "R1", "line": 10}]
-    got = integer_lines_from_analyzer_findings(
-        findings, allowed_rule_ids=frozenset()
-    )
+    got = integer_lines_from_analyzer_findings(findings, allowed_rule_ids=frozenset())
     assert got == []
 
 
@@ -48,9 +40,7 @@ def test_analyzer_filters_rule_id_and_dedupes() -> None:
         {"rule_id": "R1", "line": 3},
         {"rule_id": "R1", "line": 5},
     ]
-    got = integer_lines_from_analyzer_findings(
-        findings, allowed_rule_ids=frozenset({"R1"})
-    )
+    got = integer_lines_from_analyzer_findings(findings, allowed_rule_ids=frozenset({"R1"}))
     assert got == [3, 5]
 
 
@@ -60,17 +50,13 @@ def test_analyzer_drops_non_int_line() -> None:
         {"rule_id": "R1", "line": None},
         {"rule_id": "R1"},
     ]
-    got = integer_lines_from_analyzer_findings(
-        findings, allowed_rule_ids=frozenset({"R1"})
-    )
+    got = integer_lines_from_analyzer_findings(findings, allowed_rule_ids=frozenset({"R1"}))
     assert got == [3]
 
 
 def test_analyzer_accepts_line_start_when_line_absent() -> None:
     findings = [{"rule_id": "R1", "line_start": 6}]
-    got = integer_lines_from_analyzer_findings(
-        findings, allowed_rule_ids=frozenset({"R1"})
-    )
+    got = integer_lines_from_analyzer_findings(findings, allowed_rule_ids=frozenset({"R1"}))
     assert got == [6]
 
 
@@ -94,9 +80,7 @@ def test_semgrep_filters_check_id_and_stem() -> None:
             "start": {"line": 2},
         },
     ]
-    got = integer_lines_from_semgrep_results(
-        results, test_id=tid, allowed_check_ids=allow
-    )
+    got = integer_lines_from_semgrep_results(results, test_id=tid, allowed_check_ids=allow)
     assert got == [2]
 
 

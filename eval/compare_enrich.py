@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from eval.line_overlap import (
     build_line_overlap_payload,
@@ -14,6 +13,9 @@ from eval.rule_map import (
     _rule_ids_for_case,
     allowed_semgrep_check_ids_for_case,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _load_json_object(path: Path) -> dict[str, Any]:
@@ -56,9 +58,7 @@ def enrich_rows_with_line_overlap(
         results_dicts = [x for x in results if isinstance(x, dict)]
         allow_checks = allowed_semgrep_check_ids_for_case(case, rule_map)
         allowed_rules = (
-            frozenset()
-            if case.get("type") == "safe"
-            else frozenset(_rule_ids_for_case(case))
+            frozenset() if case.get("type") == "safe" else frozenset(_rule_ids_for_case(case))
         )
         analyzer_lines = integer_lines_from_analyzer_findings(
             findings_dicts,

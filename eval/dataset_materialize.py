@@ -4,12 +4,14 @@ import csv
 import hashlib
 import json
 import re
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from eval.dataset_github import github_blob_to_raw_url, parse_github_blob_url
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def snapshot_id_for_repo_commit(owner: str, repo: str, sha: str) -> str:

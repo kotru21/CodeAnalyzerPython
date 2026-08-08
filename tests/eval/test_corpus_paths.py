@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
-
 from eval.corpus_paths import list_js_ts_relpaths_git, list_js_ts_relpaths_walk
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_walk_collects_sorted_unique_relpaths(tmp_path: Path) -> None:

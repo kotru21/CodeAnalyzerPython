@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 from eval.backends.semgrep_batch import batch_scan_semgrep
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_batch_groups_by_test_id(tmp_path: Path) -> None:

@@ -9,8 +9,7 @@ from analyzer.api.dependencies import get_redis_client
 from analyzer.api.schemas import AnalyzeResponse, ScanStats
 from analyzer.config import Settings, get_settings
 from analyzer.main import create_app
-from analyzer.models.base import Base, get_engine, reset_engine
-from analyzer.models.base import get_session_factory
+from analyzer.models.base import Base, get_engine, get_session_factory, reset_engine
 from analyzer.services.scan_repository import create_scan, mark_failed, save_analyze_response
 
 
@@ -44,9 +43,7 @@ def mock_redis() -> MagicMock:
 
 
 class TestGetResults:
-    async def test_unknown_scan_returns_404(
-        self, client_with_redis: AsyncClient
-    ):
+    async def test_unknown_scan_returns_404(self, client_with_redis: AsyncClient):
         sid = str(uuid4())
         resp = await client_with_redis.get(f"/api/v1/results/{sid}")
         assert resp.status_code == 404

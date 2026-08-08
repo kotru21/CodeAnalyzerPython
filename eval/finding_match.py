@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-from eval.classify import Outcome
+if TYPE_CHECKING:
+    from eval.classify import Outcome
 
 
 def finding_matches_expected(
@@ -62,7 +63,7 @@ def classify_case_findings(
     matched_findings: set[int] = set()
 
     if case.get("type") == "safe":
-        for i, f in enumerate(findings):
+        for i, _f in enumerate(findings):
             outcomes.append("FP")
             matched_findings.add(i)
         if not findings:
@@ -82,7 +83,7 @@ def classify_case_findings(
         if not hit:
             outcomes.append("FN")
 
-    for i, f in enumerate(findings):
+    for i, _f in enumerate(findings):
         if i not in matched_findings:
             outcomes.append("FP")
     return outcomes

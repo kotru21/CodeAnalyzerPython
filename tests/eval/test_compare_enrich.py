@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from eval.compare_enrich import enrich_rows_with_line_overlap
 from eval.rule_map import load_rule_map
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_enrich_adds_line_overlap_when_both_backends(tmp_path: Path) -> None:
@@ -37,9 +40,7 @@ def test_enrich_adds_line_overlap_when_both_backends(tmp_path: Path) -> None:
     cases = [{"test_id": tid, "rule_id": "R1", "type": "vulnerable"}]
     rows = [{"test_id": tid, "outcome": "TP"}]
     rm = load_rule_map(mpath)
-    enrich_rows_with_line_overlap(
-        rows, cases, rm, raw, backends_have_semgrep_and_http=True
-    )
+    enrich_rows_with_line_overlap(rows, cases, rm, raw, backends_have_semgrep_and_http=True)
     assert "line_overlap" in rows[0]
     assert rows[0]["line_overlap"]["matched_lines"] == [[3, 3]]
 
@@ -50,9 +51,7 @@ def test_skip_row_omits_line_overlap(tmp_path: Path) -> None:
     rm = load_rule_map(mpath)
     rows = [{"test_id": "X", "outcome": "SKIP"}]
     cases = [{"test_id": "X", "rule_id": "R", "type": "vulnerable"}]
-    enrich_rows_with_line_overlap(
-        rows, cases, rm, tmp_path, backends_have_semgrep_and_http=True
-    )
+    enrich_rows_with_line_overlap(rows, cases, rm, tmp_path, backends_have_semgrep_and_http=True)
     assert "line_overlap" not in rows[0]
 
 
@@ -62,9 +61,7 @@ def test_backends_flag_false_no_op(tmp_path: Path) -> None:
     rm = load_rule_map(mpath)
     rows = [{"test_id": "X", "outcome": "TP"}]
     cases = [{"test_id": "X", "rule_id": "R", "type": "vulnerable"}]
-    enrich_rows_with_line_overlap(
-        rows, cases, rm, tmp_path, backends_have_semgrep_and_http=False
-    )
+    enrich_rows_with_line_overlap(rows, cases, rm, tmp_path, backends_have_semgrep_and_http=False)
     assert "line_overlap" not in rows[0]
 
 
@@ -98,9 +95,7 @@ def test_safe_case_empty_analyzer_lines(tmp_path: Path) -> None:
     cases = [{"test_id": tid, "rule_id": "R1", "type": "safe"}]
     rows = [{"test_id": tid, "outcome": "TN"}]
     rm = load_rule_map(mpath)
-    enrich_rows_with_line_overlap(
-        rows, cases, rm, raw, backends_have_semgrep_and_http=True
-    )
+    enrich_rows_with_line_overlap(rows, cases, rm, raw, backends_have_semgrep_and_http=True)
     lo = rows[0]["line_overlap"]
     assert lo["analyzer_lines"] == []
     assert lo["semgrep_lines_in_map"] == [10]

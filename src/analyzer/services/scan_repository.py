@@ -86,9 +86,7 @@ def mark_failed(
     return True
 
 
-def fail_stale_scan(
-    session: Session, scan_id: str, *, older_than_seconds: int
-) -> bool:
+def fail_stale_scan(session: Session, scan_id: str, *, older_than_seconds: int) -> bool:
     """Mark a single pending/running scan failed if updated_at is past threshold."""
     if older_than_seconds <= 0:
         return False
@@ -160,9 +158,7 @@ def save_analyze_response(session: Session, response: AnalyzeResponse) -> Scan:
     scan.failed_rules_json = json.dumps(list(response.failed_rules))
 
     for f in response.findings:
-        fp = md5_fingerprint(
-            f.rule_id, f.file_path, str(f.line_start), str(f.column or 0)
-        )
+        fp = md5_fingerprint(f.rule_id, f.file_path, str(f.line_start), str(f.column or 0))
         session.add(
             FindingModel(
                 scan_id=sid,

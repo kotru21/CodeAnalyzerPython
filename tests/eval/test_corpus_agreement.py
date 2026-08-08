@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from eval.corpus_agreement import (
     aggregate_overlap_payloads,
@@ -8,6 +8,9 @@ from eval.corpus_agreement import (
     overlap_for_file_bucket,
 )
 from eval.rule_map import RuleMap
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _sg(path: Path, check_id: str, line: int) -> dict:

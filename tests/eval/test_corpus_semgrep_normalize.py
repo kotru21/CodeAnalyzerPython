@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from eval.corpus_semgrep_normalize import (
     integer_lines_from_semgrep_for_relpath,
     semgrep_result_relpath,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_semgrep_result_relpath_under_corpus(tmp_path: Path) -> None:

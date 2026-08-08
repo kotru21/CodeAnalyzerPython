@@ -26,9 +26,7 @@ SANITIZER_NAMES: frozenset[str] = frozenset(s.pattern.split(".")[-1] for s in SA
 
 SANITIZER_BY_PATTERN: dict[str, str] = {s.pattern: s.category for s in SANITIZERS}
 
-SINK_CATEGORY_BY_METHOD: dict[str, str] = {
-    s.pattern.split(".")[-1]: s.category for s in ALL_SINKS
-}
+SINK_CATEGORY_BY_METHOD: dict[str, str] = {s.pattern.split(".")[-1]: s.category for s in ALL_SINKS}
 # NoSQL methods are not in ALL_SINKS patterns as dotted names.
 for _nosql_m in ("find", "findOne", "findOneAndUpdate", "updateOne", "deleteOne", "aggregate"):
     SINK_CATEGORY_BY_METHOD.setdefault(_nosql_m, "nosql")
@@ -73,9 +71,7 @@ def sanitizer_applies_to_sink(func_text: str, sink_method: str) -> bool:
     return _categories_cover_sink_category(cats, sink_category)
 
 
-def sanitizer_categories_cover_sink(
-    sanitizer_cats: frozenset[str], sink_method: str
-) -> bool:
+def sanitizer_categories_cover_sink(sanitizer_cats: frozenset[str], sink_method: str) -> bool:
     sink_category = SINK_CATEGORY_BY_METHOD.get(sink_method)
     if sink_category is None:
         return False

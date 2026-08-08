@@ -110,9 +110,7 @@ async def test_async_enqueue_worker_persist_poll(client: AsyncClient, fake_redis
 
     # Source was stored then deleted after successful worker persist.
     source_keys = [k for k in fake_redis._store if "scan:source:" in k]
-    assert source_keys == [] or all(
-        fake_redis._store.get(k) is None for k in source_keys
-    )
+    assert source_keys == [] or all(fake_redis._store.get(k) is None for k in source_keys)
 
     poll = await client.get(f"/api/v1/results/{scan_id}")
     assert poll.status_code == 200

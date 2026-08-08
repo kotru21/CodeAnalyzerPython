@@ -125,9 +125,7 @@ def run_async_scan(
     try:
         # Prefer Redis blob (smaller broker payload); fall back to task arg for old APIs.
         code = None
-        redis_client = redis_lib.Redis.from_url(
-            worker_settings.redis_url, decode_responses=True
-        )
+        redis_client = redis_lib.Redis.from_url(worker_settings.redis_url, decode_responses=True)
         try:
             code = load_scan_source(redis_client, scan_id)
         except Exception:  # noqa: BLE001

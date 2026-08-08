@@ -83,8 +83,7 @@ app.get('/x', (req, res) => {
             )
         )
         assert any(
-            f.rule_id == "JS-SQL-001" and f.confidence.value == "high"
-            for f in resp.findings
+            f.rule_id == "JS-SQL-001" and f.confidence.value == "high" for f in resp.findings
         )
 
     def test_res_send_taint_maps_to_xss_003(self) -> None:
@@ -102,6 +101,5 @@ app.get('/x', (req, res) => {
             )
         )
         assert any(
-            f.rule_id == "JS-XSS-003" and f.confidence.value == "high"
-            for f in resp.findings
+            f.rule_id == "JS-XSS-003" and f.confidence.value == "high" for f in resp.findings
         )

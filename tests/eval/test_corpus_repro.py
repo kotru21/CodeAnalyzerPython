@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
-
-import pytest
+from typing import TYPE_CHECKING
 
 from eval.corpus_repro import config_bundle_hashes, semgrep_cli_version, sha256_file
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
 
 
 def test_sha256_file_known_content(tmp_path: Path) -> None:
@@ -26,9 +29,7 @@ def test_semgrep_cli_version_monkeypatch(monkeypatch: pytest.MonkeyPatch) -> Non
         return R()
 
     monkeypatch.setattr("eval.corpus_repro.subprocess.run", fake_run)
-    monkeypatch.setattr(
-        "eval.corpus_repro.semgrep_executable", lambda: "semgrep-fake"
-    )
+    monkeypatch.setattr("eval.corpus_repro.semgrep_executable", lambda: "semgrep-fake")
     assert semgrep_cli_version() == "1.2.3-test"
 
 

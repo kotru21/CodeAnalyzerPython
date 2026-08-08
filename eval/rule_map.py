@@ -63,9 +63,7 @@ def load_rule_map(path: Path) -> RuleMap:
     )
 
 
-def get_semgrep_configs_for_rule(
-    rule_map: RuleMap, rule_id: str, repo_root: Path
-) -> list[Path]:
+def get_semgrep_configs_for_rule(rule_map: RuleMap, rule_id: str, repo_root: Path) -> list[Path]:
     paths = rule_map.rules.get(rule_id, [])
     out: list[Path] = []
     for p in paths:
@@ -87,9 +85,7 @@ def _rule_ids_for_case(case: dict[str, Any]) -> list[str]:
     return ids
 
 
-def allowed_semgrep_check_ids_for_case(
-    case: dict[str, Any], rule_map: RuleMap
-) -> frozenset[str]:
+def allowed_semgrep_check_ids_for_case(case: dict[str, Any], rule_map: RuleMap) -> frozenset[str]:
     out: set[str] = set()
     eq = rule_map.equivalence_rules
     for rid in _rule_ids_for_case(case):

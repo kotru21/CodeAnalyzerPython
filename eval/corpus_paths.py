@@ -42,9 +42,7 @@ def list_js_ts_relpaths_git(
         text=False,
     )
     if proc.returncode != 0:
-        raise RuntimeError(
-            "git ls-files failed; use walk mode or run from a git checkout"
-        )
+        raise RuntimeError("git ls-files failed; use walk mode or run from a git checkout")
     raw = proc.stdout.split(b"\0")
     out: list[str] = []
     for b in raw:

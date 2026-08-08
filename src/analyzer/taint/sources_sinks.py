@@ -120,70 +120,80 @@ SQL_SINK_METHOD_NAMES: frozenset[str] = frozenset(
 
 COMMAND_SINK_METHOD_NAMES: frozenset[str] = frozenset(s.pattern for s in COMMAND_SINKS)
 
-NOSQL_SINK_METHODS: frozenset[str] = frozenset({
-    "find",
-    "findOne",
-    "findOneAndUpdate",
-    "updateOne",
-    "deleteOne",
-    "aggregate",
-})
+NOSQL_SINK_METHODS: frozenset[str] = frozenset(
+    {
+        "find",
+        "findOne",
+        "findOneAndUpdate",
+        "updateOne",
+        "deleteOne",
+        "aggregate",
+    }
+)
 
-HTTP_METHOD_SINKS: frozenset[str] = frozenset({
-    "get",
-    "post",
-    "put",
-    "patch",
-    "delete",
-    "head",
-    "request",
-})
+HTTP_METHOD_SINKS: frozenset[str] = frozenset(
+    {
+        "get",
+        "post",
+        "put",
+        "patch",
+        "delete",
+        "head",
+        "request",
+    }
+)
 
 # Only well-known HTTP client receivers (avoid Map.get, headers.get, generic client/api).
-HTTP_RECEIVER_ALLOWLIST: frozenset[str] = frozenset({
-    "axios",
-    "http",
-    "https",
-    "fetch",
-    "request",
-    "got",
-    "superagent",
-    "httpClient",
-    "undici",
-    "needle",
-})
+HTTP_RECEIVER_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "axios",
+        "http",
+        "https",
+        "fetch",
+        "request",
+        "got",
+        "superagent",
+        "httpClient",
+        "undici",
+        "needle",
+    }
+)
 
 # DB / ORM receivers for SQL method sinks (*.query, etc.).
-SQL_RECEIVER_ALLOWLIST: frozenset[str] = frozenset({
-    "db",
-    "dbConn",
-    "pool",
-    "connection",
-    "conn",
-    "client",
-    "sequelize",
-    "knex",
-    "prisma",
-    "pg",
-    "mysql",
-    "mysql2",
-    "sqlite",
-    "database",
-    "sql",
-})
+SQL_RECEIVER_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "db",
+        "dbConn",
+        "pool",
+        "connection",
+        "conn",
+        "client",
+        "sequelize",
+        "knex",
+        "prisma",
+        "pg",
+        "mysql",
+        "mysql2",
+        "sqlite",
+        "database",
+        "sql",
+    }
+)
 
 # Mongo / ODM-style receivers for NoSQL method sinks (avoid Array.prototype.find).
-NOSQL_RECEIVER_ALLOWLIST: frozenset[str] = frozenset({
-    "collection",
-    "col",
-    "model",
-    "Model",
-    "db",
-    "mongo",
-    "mongodb",
-    "mongoose",
-    "users",
-    "User",
-    "docs",
-    "documents",
-})
+NOSQL_RECEIVER_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "collection",
+        "col",
+        "model",
+        "Model",
+        "db",
+        "mongo",
+        "mongodb",
+        "mongoose",
+        "users",
+        "User",
+        "docs",
+        "documents",
+    }
+)

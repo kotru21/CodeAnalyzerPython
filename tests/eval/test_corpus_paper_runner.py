@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import pytest
 import yaml
-
 from eval.corpus_paper_runner import run_paper_eval
 from eval.rule_map import load_rule_map
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    import pytest
 
 
 class _FakeResponse:
@@ -57,9 +59,7 @@ def test_run_paper_eval_line_overlap_policy_b(
     cfg = tmp_path / "semgrep.yaml"
     cfg.write_text("rules: []\n", encoding="utf-8")
 
-    def fake_semgrep(
-        configs: list[Path], root: Path, *, timeout_sec: int = 3600
-    ) -> dict[str, Any]:
+    def fake_semgrep(configs: list[Path], root: Path, *, timeout_sec: int = 3600) -> dict[str, Any]:
         return {
             "results": [
                 {

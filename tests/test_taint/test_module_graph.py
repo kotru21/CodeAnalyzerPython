@@ -25,6 +25,4 @@ def test_bundle_resolves_require_export() -> None:
             config=ScanConfig(enable_taint=True),
         )
     )
-    assert any(
-        f.rule_id == "JS-SQL-001" and f.confidence.value == "high" for f in resp.findings
-    )
+    assert any(f.rule_id == "JS-SQL-001" and f.confidence.value == "high" for f in resp.findings)

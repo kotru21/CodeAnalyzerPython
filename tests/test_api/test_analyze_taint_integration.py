@@ -37,9 +37,7 @@ app.get('/', (req, res) => {
     async def test_prepared_db_query_no_findings_with_taint_enabled(
         self, client: AsyncClient
     ) -> None:
-        source = (
-            "db.query('SELECT * FROM users WHERE id = $1', [req.query.id]);\n"
-        )
+        source = "db.query('SELECT * FROM users WHERE id = $1', [req.query.id]);\n"
         resp = await client.post(
             "/api/v1/analyze/sync",
             json={
