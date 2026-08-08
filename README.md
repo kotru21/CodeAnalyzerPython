@@ -6,6 +6,8 @@ Static vulnerability analyzer for JavaScript/TypeScript code. Parses JS/TS via t
 
 ### Local Development
 
+Requires Python **3.12+** (`requires-python`). CI and Docker images use **3.14**.
+
 ```bash
 pip install -e ".[dev]"
 uvicorn analyzer.main:app --reload --port 8000

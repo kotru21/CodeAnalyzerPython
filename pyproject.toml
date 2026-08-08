@@ -11,9 +11,10 @@ dependencies = [
     "tree-sitter>=0.26,<0.27",
     "tree-sitter-javascript>=0.25",
     "tree-sitter-typescript>=0.23.2",
-    "celery[redis]>=5.6",
-    # kombu[redis] (via celery[redis]) requires redis<6.5
-    "redis>=6.4,<6.5",
+    # Avoid celery[redis] → kombu[redis] pin redis<6.5; transport is in kombu.
+    # Cap <8 until kombu officially supports redis-py 8 (RESP3 defaults).
+    "celery>=5.6",
+    "redis>=7.4,<8",
     "sqlalchemy>=2.0.51",
     "alembic>=1.19",
     "psycopg2-binary>=2.9.12",
@@ -43,6 +44,7 @@ asyncio_mode = "auto"
 pythonpath = ["src", "."]
 
 [tool.ruff]
+# Syntax/lint baseline; runtime and CI use 3.14 (see Dockerfile / eval.yml).
 target-version = "py312"
 line-length = 100
 src = ["src", "tests", "eval"]
@@ -51,7 +53,7 @@ src = ["src", "tests", "eval"]
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "TCH"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 strict = true
 plugins = ["pydantic.mypy"]
 mypy_path = "src"
