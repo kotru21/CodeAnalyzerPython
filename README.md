@@ -1,5 +1,12 @@
 # Analyzer Service
 
+[![Eval Catalog](https://github.com/kotru21/CodeAnalyzerPython/actions/workflows/eval.yml/badge.svg)](https://github.com/kotru21/CodeAnalyzerPython/actions/workflows/eval.yml)
+[![Python](https://img.shields.io/badge/python-3.12%2B%20%7C%20CI%2FDocker%203.14-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.141+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Celery](https://img.shields.io/badge/Celery-Redis%20broker-37B24D?logo=celery&logoColor=white)](https://docs.celeryq.dev/)
+[![Ruff](https://img.shields.io/badge/linter-ruff-D7FF64?logo=ruff&logoColor=black)](https://docs.astral.sh/ruff/)
+[![mypy](https://img.shields.io/badge/types-mypy-blue)](https://mypy-lang.org/)
+
 Static vulnerability analyzer for JavaScript/TypeScript code. Parses JS/TS via tree-sitter, runs AST-based rules + taint analysis (intra-procedural and **limited same-file inter-procedural** calls), enriches findings with CWE data.
 
 ## Quick Start
