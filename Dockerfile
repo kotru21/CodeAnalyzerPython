@@ -23,6 +23,8 @@ RUN useradd --create-home --uid 10001 analyzer
 COPY --from=builder /install /usr/local
 COPY --chown=analyzer:analyzer data ./data
 COPY --chown=analyzer:analyzer src ./src
+COPY --chown=analyzer:analyzer alembic ./alembic
+COPY --chown=analyzer:analyzer alembic.ini ./
 COPY --chown=analyzer:analyzer pyproject.toml ./
 
 ENV PYTHONPATH=/app/src

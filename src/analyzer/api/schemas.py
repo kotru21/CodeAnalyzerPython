@@ -29,7 +29,7 @@ class AnalyzeRequest(BaseModel):
 
 
 class AnalyzeBundleRequest(BaseModel):
-    """Multi-file scan: merged function index for taint; rules run per file."""
+    """Multi-file scan: per-file fn index + relative imports; rules run per file."""
 
     files: dict[str, str] = Field(
         ...,
@@ -42,6 +42,10 @@ class AnalyzeBundleRequest(BaseModel):
     config: ScanConfig = Field(default_factory=ScanConfig)
     scan_id: UUID | None = None
     response_format: Literal["json", "sarif"] = "json"
+    tsconfig_paths: dict[str, list[str]] | None = Field(
+        default=None,
+        description="Optional TS path aliases, e.g. {'@app/*': ['src/*']}",
+    )
 
     @field_validator("files")
     @classmethod
@@ -90,7 +94,7 @@ class ScanStats(BaseModel):
 
 class AnalyzeResponse(BaseModel):
     scan_id: UUID
-    status: str
+    status: Literal["completed", "partial", "failed"]
     language: str
     stats: ScanStats
     findings: list[Finding]
@@ -119,3 +123,4 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     rules_loaded: int
+    database: Literal["ok", "unavailable"] = "ok"

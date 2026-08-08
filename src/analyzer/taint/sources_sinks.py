@@ -43,7 +43,14 @@ GENERIC_SOURCES: list[TaintSource] = [
     TaintSource("process.env", "node", "Environment variables (partial taint)"),
 ]
 
-ALL_SOURCES: list[TaintSource] = EXPRESS_SOURCES + KOA_SOURCES + FASTIFY_SOURCES + GENERIC_SOURCES
+NEXT_SOURCES: list[TaintSource] = [
+    TaintSource("searchParams", "nextjs", "Next.js App Router searchParams"),
+    TaintSource("props.searchParams", "nextjs", "Next.js page searchParams prop"),
+]
+
+ALL_SOURCES: list[TaintSource] = (
+    EXPRESS_SOURCES + KOA_SOURCES + FASTIFY_SOURCES + GENERIC_SOURCES + NEXT_SOURCES
+)
 
 SOURCE_PATTERNS: frozenset[str] = frozenset(s.pattern for s in ALL_SOURCES)
 
@@ -144,4 +151,39 @@ HTTP_RECEIVER_ALLOWLIST: frozenset[str] = frozenset({
     "httpClient",
     "undici",
     "needle",
+})
+
+# DB / ORM receivers for SQL method sinks (*.query, etc.).
+SQL_RECEIVER_ALLOWLIST: frozenset[str] = frozenset({
+    "db",
+    "dbConn",
+    "pool",
+    "connection",
+    "conn",
+    "client",
+    "sequelize",
+    "knex",
+    "prisma",
+    "pg",
+    "mysql",
+    "mysql2",
+    "sqlite",
+    "database",
+    "sql",
+})
+
+# Mongo / ODM-style receivers for NoSQL method sinks (avoid Array.prototype.find).
+NOSQL_RECEIVER_ALLOWLIST: frozenset[str] = frozenset({
+    "collection",
+    "col",
+    "model",
+    "Model",
+    "db",
+    "mongo",
+    "mongodb",
+    "mongoose",
+    "users",
+    "User",
+    "docs",
+    "documents",
 })

@@ -1,6 +1,7 @@
 import logging
 import time
 from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -17,6 +18,7 @@ from analyzer.core.language_detect import detect_language
 from analyzer.core.severity import Confidence, Severity
 from analyzer.knowledge.cwe_database import CWEDatabase
 from analyzer.parsers.factory import get_parser
+from analyzer.parsers.parse_cache import ScanParseCache
 from analyzer.rules.base import AnalysisContext, BaseRule, RawFinding
 from analyzer.rules.registry import get_rules_for_language
 from analyzer.taint.module_graph import build_per_file_fn_index
@@ -76,7 +78,9 @@ class Orchestrator:
     def __init__(self, settings: Settings, cwe_db: CWEDatabase | None = None) -> None:
         self._settings = settings
         self._cwe_db = cwe_db
-        self._taint_tracker = TaintTracker()
+        self._taint_tracker = TaintTracker(
+            sql_sink_allowlist=settings.sql_sink_allowlist
+        )
 
     def analyze_sync(self, request: AnalyzeRequest) -> AnalyzeResponse:
         start = time.monotonic()
@@ -87,16 +91,12 @@ class Orchestrator:
             deadline = start + budget_ms / 1000.0
 
         language = request.language or detect_language(request.file_path)
-        parser = get_parser(language=language, file_path=request.file_path)
-        tree = parser.parse(request.source_code)
-
-        context = AnalysisContext(
-            source_code=request.source_code,
-            file_path=request.file_path,
-            tree=tree,
-            root_node=tree.root_node,
-            lines=request.source_code.splitlines(),
-            language=language,
+        parse_cache = ScanParseCache()
+        context = self._make_context(
+            request.file_path,
+            request.source_code,
+            language,
+            parse_cache,
         )
 
         rules = get_rules_for_language(language)
@@ -109,13 +109,17 @@ class Orchestrator:
             rf.file_path = context.file_path
         time_budget_exceeded = deadline is not None and time.monotonic() > deadline
 
+        taint_ran = False
         if request.config.enable_taint and not time_budget_exceeded:
             taint_flows = self._taint_tracker.analyze(context)
             raw_findings.extend(
                 self._taint_to_findings(taint_flows, file_path=context.file_path)
             )
+            taint_ran = True
 
         raw_findings = self._deduplicate(raw_findings)
+        if taint_ran:
+            raw_findings = self._drop_untainted_ssrf(raw_findings)
 
         threshold = request.config.severity_threshold
         raw_findings = self._filter_severity(raw_findings, rules, threshold)
@@ -131,14 +135,39 @@ class Orchestrator:
             time_budget_exceeded=time_budget_exceeded,
         )
 
+        status = "partial" if time_budget_exceeded else "completed"
         return AnalyzeResponse(
             scan_id=scan_id,
-            status="completed",
+            status=status,
             language=language,
             stats=stats,
             findings=findings,
             created_at=datetime.now(UTC),
             failed_rules=failed_rules,
+        )
+
+    def _make_context(
+        self,
+        file_path: str,
+        source: str,
+        language: str,
+        parse_cache: ScanParseCache,
+    ) -> AnalysisContext:
+        cached = parse_cache.get(file_path, source)
+        if cached is not None:
+            tree = cached.tree
+            language = cached.language
+        else:
+            parser = get_parser(language=language, file_path=file_path)
+            tree = parser.parse(source)
+            parse_cache.put(file_path, source, tree, language)
+        return AnalysisContext(
+            source_code=source,
+            file_path=file_path,
+            tree=tree,
+            root_node=tree.root_node,
+            lines=source.splitlines(),
+            language=language,
         )
 
     def _run_rules(
@@ -147,18 +176,50 @@ class Orchestrator:
         context: AnalysisContext,
         deadline: float | None,
     ) -> tuple[list[RawFinding], list[str]]:
+        active = [r for r in rules if not r.should_skip(context)]
+        if (
+            self._settings.parallel_rules
+            and len(active) > 1
+            and deadline is None
+        ):
+            return self._run_rules_parallel(active, context)
         results: list[RawFinding] = []
         failed_rules: list[str] = []
-        for rule in rules:
+        for rule in active:
             if deadline is not None and time.monotonic() > deadline:
                 break
-            if rule.should_skip(context):
-                continue
             try:
                 results.extend(rule.run(context))
             except Exception:
                 _logger.exception("Rule %s failed", rule.meta().rule_id)
                 failed_rules.append(rule.meta().rule_id)
+        return results, failed_rules
+
+    def _run_rules_parallel(
+        self,
+        rules: Sequence[BaseRule],
+        context: AnalysisContext,
+    ) -> tuple[list[RawFinding], list[str]]:
+        """Experimental: concurrent rule.run on one tree-sitter Tree — keep off in prod."""
+        results: list[RawFinding] = []
+        failed_rules: list[str] = []
+        workers = max(1, self._settings.parallel_rules_workers)
+
+        def _run_one(rule: BaseRule) -> tuple[str, list[RawFinding] | None]:
+            try:
+                return rule.meta().rule_id, rule.run(context)
+            except Exception:  # noqa: BLE001
+                _logger.exception("Rule %s failed", rule.meta().rule_id)
+                return rule.meta().rule_id, None
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_run_one, r) for r in rules]
+            for fut in as_completed(futures):
+                rid, findings = fut.result()
+                if findings is None:
+                    failed_rules.append(rid)
+                else:
+                    results.extend(findings)
         return results, failed_rules
 
     def analyze_bundle_sync(self, request: AnalyzeBundleRequest) -> AnalyzeResponse:
@@ -170,22 +231,12 @@ class Orchestrator:
             deadline = start + budget_ms / 1000.0
 
         paths = sorted(request.files.keys())
+        parse_cache = ScanParseCache()
         contexts: list[AnalysisContext] = []
         for rel in paths:
             src = request.files[rel]
             lang = request.language or detect_language(rel)
-            parser = get_parser(language=lang, file_path=rel)
-            tree = parser.parse(src)
-            contexts.append(
-                AnalysisContext(
-                    source_code=src,
-                    file_path=rel,
-                    tree=tree,
-                    root_node=tree.root_node,
-                    lines=src.splitlines(),
-                    language=lang,
-                )
-            )
+            contexts.append(self._make_context(rel, src, lang, parse_cache))
 
         primary_lang = contexts[0].language if contexts else "javascript"
         rules = get_rules_for_language(primary_lang)
@@ -193,7 +244,11 @@ class Orchestrator:
             allowed = set(request.config.rule_ids)
             rules = [r for r in rules if r.meta().rule_id in allowed]
 
-        per_file_fn_index = build_per_file_fn_index(contexts, request.files)
+        per_file_fn_index = build_per_file_fn_index(
+            contexts,
+            request.files,
+            tsconfig_paths=request.tsconfig_paths,
+        )
         raw_findings: list[RawFinding] = []
         failed_rules: list[str] = []
 
@@ -208,6 +263,7 @@ class Orchestrator:
 
         time_budget_exceeded = deadline is not None and time.monotonic() > deadline
 
+        taint_ran = False
         if request.config.enable_taint and not time_budget_exceeded:
             for ctx in contexts:
                 if deadline is not None and time.monotonic() > deadline:
@@ -219,8 +275,11 @@ class Orchestrator:
                 raw_findings.extend(
                     self._taint_to_findings(flows, file_path=ctx.file_path)
                 )
+                taint_ran = True
 
         raw_findings = self._deduplicate(raw_findings)
+        if taint_ran:
+            raw_findings = self._drop_untainted_ssrf(raw_findings)
         raw_findings = self._filter_severity(
             raw_findings, rules, request.config.severity_threshold
         )
@@ -239,15 +298,25 @@ class Orchestrator:
             lines_scanned=sum(len(c.lines) for c in contexts),
         )
 
+        status = "partial" if time_budget_exceeded else "completed"
         return AnalyzeResponse(
             scan_id=scan_id,
-            status="completed",
+            status=status,
             language=primary_lang,
             stats=stats,
             findings=findings,
             created_at=datetime.now(UTC),
             failed_rules=list(dict.fromkeys(failed_rules)),
         )
+
+    @staticmethod
+    def _drop_untainted_ssrf(findings: list[RawFinding]) -> list[RawFinding]:
+        """Drop AST-only SSRF after taint ran (noise). Keep when taint was skipped."""
+        return [
+            f
+            for f in findings
+            if not (f.rule_id == "JS-SSRF-001" and not f.taint_confirmed)
+        ]
 
     def _taint_to_findings(
         self, flows: list[TaintFlow], *, file_path: str | None = None

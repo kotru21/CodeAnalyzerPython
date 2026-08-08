@@ -10,7 +10,12 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="ANALYZER_", env_file=".env")
+    # Compose secrets (POSTGRES_*, REDIS_*) may sit in the same .env; ignore extras.
+    model_config = SettingsConfigDict(
+        env_prefix="ANALYZER_",
+        env_file=".env",
+        extra="ignore",
+    )
 
     app_name: str = "Analyzer Service"
     app_version: str = "0.1.0"
@@ -29,7 +34,7 @@ class Settings(BaseSettings):
     # Default budget applied to async Celery scans when request/config has none.
     async_analysis_budget_ms: int = 120_000
 
-    # Shared secret; when set, require X-API-Key on analyze/results/rules.
+    # Shared secret; required unless debug=True. When set, require X-API-Key.
     api_key: str | None = None
 
     celery_soft_time_limit_seconds: int = 180
@@ -44,6 +49,25 @@ class Settings(BaseSettings):
     scan_task_registry_ttl_seconds: int = 604_800
     cors_origins: list[str] = []
     sarif_information_uri: str | None = None
+
+    # Rate limits (Redis); 0 disables.
+    rate_limit_per_minute: int = 60
+    rate_limit_sync_per_minute: int = 20
+
+    # When False, SQL *.query sinks match any receiver (legacy noisy mode).
+    sql_sink_allowlist: bool = True
+
+    # Experimental: ThreadPool rule execution sharing one tree-sitter Tree.
+    # Keep False in production until concurrency is validated (not process-safe).
+    parallel_rules: bool = False
+    parallel_rules_workers: int = 4
+
+    # Honor X-Forwarded-For for rate-limit buckets only when behind a trusted proxy.
+    trust_x_forwarded_for: bool = False
+
+    # Mark pending/running scans failed if updated_at older than this (seconds).
+    # Default None → celery_time_limit_seconds + 60 (set in model_validator).
+    scan_stale_after_seconds: int | None = None
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -68,6 +92,14 @@ class Settings(BaseSettings):
         if "*" in self.cors_origins:
             msg = "cors_origins must not contain '*' (incompatible with allow_credentials)"
             raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def default_stale_after_celery_limit(self) -> Self:
+        """Stale timeout must cover Celery hard time limit (+ buffer for persist)."""
+        minimum = self.celery_time_limit_seconds + 60
+        if self.scan_stale_after_seconds is None or self.scan_stale_after_seconds < minimum:
+            self.scan_stale_after_seconds = minimum
         return self
 
 

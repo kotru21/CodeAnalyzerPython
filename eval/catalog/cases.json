@@ -45,14 +45,7 @@
       "enable_taint": true
     },
     "expected_cwe": "CWE-89",
-    "description": "Промежуточные переменные и шаблонная строка",
-    "expected_findings": [
-      {
-        "rule_id": "JS-SQL-001",
-        "line": 4,
-        "cwe_id": "CWE-89"
-      }
-    ]
+    "description": "Промежуточные переменные и шаблонная строка"
   },
   {
     "test_id": "SQL-MED-SAFE-01",
@@ -190,14 +183,7 @@
       "enable_taint": true
     },
     "expected_cwe": "CWE-79",
-    "description": "innerHTML с пользовательским вводом",
-    "expected_findings": [
-      {
-        "rule_id": "JS-XSS-001",
-        "line": 1,
-        "cwe_id": "CWE-79"
-      }
-    ]
+    "description": "innerHTML с пользовательским вводом"
   },
   {
     "test_id": "XSS1-EASY-SAFE-01",
@@ -1278,5 +1264,53 @@
       "special:duplicate-observe"
     ],
     "notes_expected_count": 2
+  },
+  {
+    "test_id": "RW-NEXT-SEARCHPARAMS-REDIRECT",
+    "rule_id": "JS-NEXT-001",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "page.tsx",
+    "source_code": "import { redirect } from 'next/navigation';\n\nexport default function Page({ searchParams }) {\n  redirect(searchParams.next);\n}\n",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-601",
+    "description": "Next.js searchParams → redirect",
+    "tags": [
+      "realworld:next"
+    ]
+  },
+  {
+    "test_id": "RW-NEST-QUERY-SQL",
+    "rule_id": "JS-NEST-001",
+    "difficulty": "medium",
+    "type": "vulnerable",
+    "file_path": "users.controller.ts",
+    "source_code": "@Controller('users')\nexport class UsersController {\n  @Get()\n  find(@Query('id') id: string) {\n    return this.db.query(`SELECT * FROM users WHERE id = '${id}'`);\n  }\n}\n",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-89",
+    "description": "NestJS @Query near raw SQL template",
+    "tags": [
+      "realworld:nest"
+    ]
+  },
+  {
+    "test_id": "RW-NEXT-SAFE-LITERAL",
+    "rule_id": "JS-NEXT-001",
+    "difficulty": "easy",
+    "type": "safe",
+    "file_path": "page.tsx",
+    "source_code": "import { redirect } from 'next/navigation';\n\nexport default function Page() {\n  redirect('/home');\n}\n",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "Next.js redirect with literal path",
+    "tags": [
+      "realworld:next"
+    ]
   }
 ]

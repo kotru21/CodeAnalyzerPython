@@ -1,8 +1,20 @@
 import pytest
 
+from analyzer.config import get_settings
 from analyzer.parsers.js_parser import JavaScriptParser
 from analyzer.parsers.ts_parser import TypeScriptParser
 from analyzer.rules.base import AnalysisContext
+
+
+@pytest.fixture(autouse=True)
+def _analyzer_debug_for_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Allow create_app lifespan without ANALYZER_API_KEY in unit tests."""
+    monkeypatch.setenv("ANALYZER_DEBUG", "true")
+    monkeypatch.setenv("ANALYZER_RATE_LIMIT_PER_MINUTE", "0")
+    monkeypatch.setenv("ANALYZER_RATE_LIMIT_SYNC_PER_MINUTE", "0")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 @pytest.fixture

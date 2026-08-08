@@ -2,6 +2,7 @@ from tree_sitter import Node
 
 from analyzer.core.severity import Confidence, Severity
 from analyzer.rules.base import AnalysisContext, BaseRule, RawFinding, RuleMeta
+from analyzer.taint.source_match import find_matching_source
 
 _HTTP_FUNCTIONS = frozenset({"fetch", "got", "request"})
 _HTTP_METHODS = frozenset({"get", "post", "put", "patch", "delete", "head", "request"})
@@ -38,6 +39,13 @@ class SSRFRule(BaseRule):
         for child in node.children:
             self._walk(child, ctx, findings)
 
+    @staticmethod
+    def _arg_has_known_source(node: Node) -> bool:
+        """Only report when a known taint source appears in the URL argument tree."""
+        if find_matching_source(node):
+            return True
+        return any(SSRFRule._arg_has_known_source(child) for child in node.children)
+
     def _check_call(self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]) -> None:
         func = node.child_by_field_name("function")
         args = node.child_by_field_name("arguments")
@@ -69,6 +77,9 @@ class SSRFRule(BaseRule):
         if first_arg.type == "template_string" and not any(
             c.type == "template_substitution" for c in first_arg.children
         ):
+            return
+        # Drop AST-only noise: require a known source pattern in the URL argument.
+        if not self._arg_has_known_source(first_arg):
             return
 
         findings.append(

@@ -14,8 +14,12 @@ class Sanitizer:
 SANITIZERS: list[Sanitizer] = [
     Sanitizer("validator.escape", "xss", "validator.js escape function"),
     Sanitizer("DOMPurify.sanitize", "xss", "DOMPurify sanitization"),
+    Sanitizer("he.encode", "xss", "he HTML encode"),
+    Sanitizer("xss", "xss", "xss library filter"),
     Sanitizer("parseInt", "type_cast", "Parse to integer (strips non-numeric)"),
     Sanitizer("Number", "type_cast", "Cast to number"),
+    Sanitizer("path.normalize", "path", "Normalize filesystem path"),
+    Sanitizer("path.basename", "path", "Strip directory from path"),
 ]
 
 SANITIZER_NAMES: frozenset[str] = frozenset(s.pattern.split(".")[-1] for s in SANITIZERS)
@@ -25,6 +29,9 @@ SANITIZER_BY_PATTERN: dict[str, str] = {s.pattern: s.category for s in SANITIZER
 SINK_CATEGORY_BY_METHOD: dict[str, str] = {
     s.pattern.split(".")[-1]: s.category for s in ALL_SINKS
 }
+# NoSQL methods are not in ALL_SINKS patterns as dotted names.
+for _nosql_m in ("find", "findOne", "findOneAndUpdate", "updateOne", "deleteOne", "aggregate"):
+    SINK_CATEGORY_BY_METHOD.setdefault(_nosql_m, "nosql")
 
 PARAMETERIZED_PATTERNS: frozenset[str] = frozenset(
     {

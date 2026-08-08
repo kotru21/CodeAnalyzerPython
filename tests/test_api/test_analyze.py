@@ -16,7 +16,8 @@ class TestHealthEndpoint:
         resp = await client.get("/api/v1/health")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["status"] == "healthy"
+        assert data["status"] in ("healthy", "degraded")
+        assert data["database"] in ("ok", "unavailable")
         assert data["rules_loaded"] > 0
 
 

@@ -14,11 +14,17 @@ from analyzer.taint.sources_sinks import (
     COMMAND_SINK_METHOD_NAMES,
     HTTP_METHOD_SINKS,
     HTTP_RECEIVER_ALLOWLIST,
+    NOSQL_RECEIVER_ALLOWLIST,
     NOSQL_SINK_METHODS,
     SINK_IDENTIFIERS,
     SINK_MEMBER_PATTERNS,
+    SQL_RECEIVER_ALLOWLIST,
     SQL_SINK_METHOD_NAMES,
     is_weak_source,
+)
+
+_FUNCTION_NODE_TYPES = frozenset(
+    {"function_declaration", "arrow_function", "function_expression"}
 )
 
 MAX_INTERPROC_DEPTH = 5
@@ -158,6 +164,10 @@ def _positional_arguments(args_node: Node | None) -> list[Node]:
 class TaintTracker:
     """Taint tracker on tree-sitter AST: intra- and limited same-file inter-procedural."""
 
+    def __init__(self, *, sql_sink_allowlist: bool = True) -> None:
+        self._sql_sink_allowlist = sql_sink_allowlist
+        self._interproc_cache: set[tuple[str, int, tuple[tuple[str, str], ...]]] = set()
+
     def analyze(
         self,
         context: AnalysisContext,
@@ -167,6 +177,7 @@ class TaintTracker:
         sanitized_vars: dict[str, frozenset[str]] = {}
         flows: list[TaintFlow] = []
         idx = fn_index if fn_index is not None else _index_functions(context.root_node)
+        self._interproc_cache.clear()
 
         self._collect_taint_info(
             context.root_node,
@@ -189,6 +200,52 @@ class TaintTracker:
         fn_index: dict[str, tuple[list[str], Node]],
         depth: int,
     ) -> None:
+        # Nested functions get a fresh scope: formals shadow outer taint.
+        if node.type in _FUNCTION_NODE_TYPES:
+            params = _params_from_function_node(node)
+            body = node.child_by_field_name("body")
+            local_tainted = {k: v for k, v in tainted.items() if k not in params}
+            local_san = {k: v for k, v in sanitized.items() if k not in params}
+            if body is not None:
+                self._collect_taint_info(
+                    body, local_tainted, local_san, flows, ctx, fn_index, depth
+                )
+            for child in node.children:
+                if child is body or child.type in (
+                    "formal_parameters",
+                    "statement_block",
+                ):
+                    continue
+                # Arrow expression body already handled via body field.
+                if child is body:
+                    continue
+                self._collect_taint_info(
+                    child, local_tainted, local_san, flows, ctx, fn_index, depth
+                )
+            return
+
+        # Path-sensitive if/else: analyze branches on separate scope copies.
+        if node.type == "if_statement":
+            cond = node.child_by_field_name("condition")
+            cons = node.child_by_field_name("consequence")
+            alt = node.child_by_field_name("alternative")
+            if cond is not None:
+                self._collect_taint_info(
+                    cond, tainted, sanitized, flows, ctx, fn_index, depth
+                )
+            then_t, then_s = dict(tainted), dict(sanitized)
+            if cons is not None:
+                self._collect_taint_info(
+                    cons, then_t, then_s, flows, ctx, fn_index, depth
+                )
+            else_t, else_s = dict(tainted), dict(sanitized)
+            if alt is not None:
+                self._collect_taint_info(
+                    alt, else_t, else_s, flows, ctx, fn_index, depth
+                )
+            self._join_scopes(tainted, sanitized, then_t, then_s, else_t, else_s, alt is None)
+            return
+
         if node.type == "variable_declarator":
             self._handle_var_decl(
                 node, tainted, sanitized, flows, ctx, fn_index, depth
@@ -200,7 +257,7 @@ class TaintTracker:
             self._check_assignment_sink(node, tainted, sanitized, flows, ctx)
         elif node.type == "call_expression":
             self._check_sink(node, tainted, sanitized, flows, ctx)
-            self._maybe_analyze_callee_interproc(
+            self._analyze_callee_interproc(
                 node, tainted, sanitized, flows, ctx, fn_index, depth
             )
 
@@ -209,31 +266,67 @@ class TaintTracker:
                 child, tainted, sanitized, flows, ctx, fn_index, depth
             )
 
-    def _maybe_analyze_callee_interproc(
+    @staticmethod
+    def _join_scopes(
+        out_tainted: dict[str, str],
+        out_sanitized: dict[str, frozenset[str]],
+        then_t: dict[str, str],
+        then_s: dict[str, frozenset[str]],
+        else_t: dict[str, str],
+        else_s: dict[str, frozenset[str]],
+        else_is_fallthrough: bool,
+    ) -> None:
+        """Conservative join after if/else: taint if either path keeps it."""
+        keys = set(then_t) | set(else_t) | set(out_tainted)
+        new_t: dict[str, str] = {}
+        for k in keys:
+            in_then = k in then_t
+            in_else = k in else_t
+            if in_then and in_else:
+                new_t[k] = then_t[k]
+            elif in_then and else_is_fallthrough:
+                # May skip then → keep pre-if taint if any, else then-only is uncertain.
+                if k in out_tainted:
+                    new_t[k] = out_tainted[k]
+                else:
+                    new_t[k] = then_t[k]
+            elif in_then or in_else:
+                new_t[k] = then_t[k] if in_then else else_t[k]
+        out_tainted.clear()
+        out_tainted.update(new_t)
+
+        san_keys = set(then_s) | set(else_s)
+        new_s: dict[str, frozenset[str]] = {}
+        for k in san_keys:
+            if k in then_s and k in else_s:
+                new_s[k] = then_s[k] & else_s[k]
+                if not new_s[k]:
+                    new_s.pop(k, None)
+            elif k in then_s and else_is_fallthrough and k in out_sanitized:
+                new_s[k] = then_s[k] & out_sanitized[k]
+                if not new_s[k]:
+                    new_s.pop(k, None)
+        out_sanitized.clear()
+        out_sanitized.update(new_s)
+
+    def _bindings_for_call(
         self,
-        node: Node,
+        call_node: Node,
         tainted: dict[str, str],
         sanitized: dict[str, frozenset[str]],
-        flows: list[TaintFlow],
-        ctx: AnalysisContext,
         fn_index: dict[str, tuple[list[str], Node]],
-        depth: int,
-    ) -> None:
-        if depth >= MAX_INTERPROC_DEPTH:
-            return
-        func = node.child_by_field_name("function")
-        args_node = node.child_by_field_name("arguments")
+    ) -> tuple[str, Node, dict[str, str], dict[str, frozenset[str]]] | None:
+        func = call_node.child_by_field_name("function")
+        args_node = call_node.child_by_field_name("arguments")
         if func is None:
-            return
+            return None
         fname = _interproc_callee_name(func)
         if not fname or fname not in fn_index:
-            return
+            return None
         params, body = fn_index[fname]
-        if not params:
-            return
         arg_nodes = _positional_arguments(args_node)
         bindings: dict[str, str] = {}
-        san_child = dict(sanitized)
+        san_child: dict[str, frozenset[str]] = {}
         for i, pname in enumerate(params):
             if i >= len(arg_nodes):
                 break
@@ -250,12 +343,39 @@ class TaintTracker:
             src = self._find_tainted_in_arg(arg, tainted, sanitized)
             if src:
                 bindings[pname] = src
-        if not bindings:
-            return
-        merged = {**tainted, **bindings}
+        return fname, body, bindings, san_child
+
+    def _analyze_callee_interproc(
+        self,
+        node: Node,
+        tainted: dict[str, str],
+        sanitized: dict[str, frozenset[str]],
+        flows: list[TaintFlow],
+        ctx: AnalysisContext,
+        fn_index: dict[str, tuple[list[str], Node]],
+        depth: int,
+        *,
+        require_bindings: bool = True,
+    ) -> str | None:
+        """Walk callee body with param bindings only (no ambient outer taint)."""
+        if depth >= MAX_INTERPROC_DEPTH:
+            return None
+        resolved = self._bindings_for_call(node, tainted, sanitized, fn_index)
+        if resolved is None:
+            return None
+        fname, body, bindings, san_child = resolved
+        if require_bindings and not bindings:
+            return None
+        sig = tuple(sorted(bindings.items()))
+        cache_key = (fname, depth, sig)
+        if cache_key in self._interproc_cache:
+            return self._return_expression_taint(body, dict(bindings), san_child)
+        self._interproc_cache.add(cache_key)
+        # Do not inherit ambient outer taint into the callee.
         self._collect_taint_info(
-            body, merged, san_child, flows, ctx, fn_index, depth + 1
+            body, dict(bindings), san_child, flows, ctx, fn_index, depth + 1
         )
+        return self._return_expression_taint(body, dict(bindings), san_child)
 
     def _interproc_call_return_source(
         self,
@@ -267,40 +387,16 @@ class TaintTracker:
         fn_index: dict[str, tuple[list[str], Node]],
         depth: int,
     ) -> str | None:
-        if depth >= MAX_INTERPROC_DEPTH:
-            return None
-        func = call_node.child_by_field_name("function")
-        args_node = call_node.child_by_field_name("arguments")
-        if func is None:
-            return None
-        fname = _interproc_callee_name(func)
-        if not fname or fname not in fn_index:
-            return None
-        params, body = fn_index[fname]
-        arg_nodes = _positional_arguments(args_node)
-        bindings: dict[str, str] = {}
-        san_child = dict(sanitized)
-        for i, pname in enumerate(params):
-            if i >= len(arg_nodes):
-                break
-            arg = arg_nodes[i]
-            sanitizer_cats = self._is_sanitizer_call(arg)
-            if sanitizer_cats:
-                san_child[pname] = sanitizer_cats
-                inner = self._sanitizer_first_arg(arg)
-                if inner is not None:
-                    src = self._find_tainted_in_arg(inner, tainted, sanitized)
-                    if src:
-                        bindings[pname] = src
-                continue
-            src = self._find_tainted_in_arg(arg, tainted, sanitized)
-            if src:
-                bindings[pname] = src
-        merged = {**tainted, **bindings}
-        self._collect_taint_info(
-            body, merged, san_child, flows, ctx, fn_index, depth + 1
+        return self._analyze_callee_interproc(
+            call_node,
+            tainted,
+            sanitized,
+            flows,
+            ctx,
+            fn_index,
+            depth,
+            require_bindings=False,
         )
-        return self._return_expression_taint(body, merged, san_child)
 
     @staticmethod
     def _return_expression_taint(
@@ -554,11 +650,16 @@ class TaintTracker:
             and method in _SQL_PLACEHOLDER_MULTIARG_METHODS
         ):
             first = pos_args[0]
+            taint_in_first = self._find_tainted_in_arg(
+                first, tainted, sanitized, method
+            )
             lit = _string_literal_text(first)
+            # Parameterized / bound style: SQL text arg not tainted; values may be.
+            if taint_in_first is None and (
+                lit is None or is_parameterized_query(lit) or first.type == "identifier"
+            ):
+                return
             if lit is not None and is_parameterized_query(lit):
-                taint_in_first = self._find_tainted_in_arg(
-                    first, tainted, sanitized, method
-                )
                 if taint_in_first and self._should_report_flow(
                     taint_in_first, method
                 ):
@@ -628,8 +729,20 @@ class TaintTracker:
         pos = _positional_arguments(args)
         return pos[0] if pos else None
 
-    @staticmethod
-    def _is_known_sink(func_node: Node, method: str) -> bool:
+    def _receiver_identifier(self, func_node: Node) -> str | None:
+        obj = func_node.child_by_field_name("object")
+        if obj is None:
+            return None
+        if obj.type == "identifier":
+            return obj.text.decode() if obj.text else None
+        # collection.find / db.users.find — use property of nested member as receiver hint
+        if obj.type == "member_expression":
+            prop = obj.child_by_field_name("property")
+            if prop is not None and prop.type in ("identifier", "property_identifier"):
+                return prop.text.decode() if prop.text else None
+        return None
+
+    def _is_known_sink(self, func_node: Node, method: str) -> bool:
         if func_node.type == "identifier":
             return method in SINK_IDENTIFIERS
         if func_node.type == "member_expression":
@@ -637,16 +750,15 @@ class TaintTracker:
             norm = _normalize_optional_access(full_text)
             if full_text in SINK_MEMBER_PATTERNS or norm in SINK_MEMBER_PATTERNS:
                 return True
+            receiver = self._receiver_identifier(func_node)
             if method in SQL_SINK_METHOD_NAMES:
-                return True
+                if not self._sql_sink_allowlist:
+                    return True
+                return receiver is not None and receiver in SQL_RECEIVER_ALLOWLIST
             if method in NOSQL_SINK_METHODS:
-                return True
+                return receiver is not None and receiver in NOSQL_RECEIVER_ALLOWLIST
             if method in HTTP_METHOD_SINKS:
-                obj = func_node.child_by_field_name("object")
-                if obj is not None and obj.type == "identifier":
-                    obj_name = obj.text.decode() if obj.text else ""
-                    return obj_name in HTTP_RECEIVER_ALLOWLIST
-                return False
+                return receiver is not None and receiver in HTTP_RECEIVER_ALLOWLIST
         return False
 
     @staticmethod

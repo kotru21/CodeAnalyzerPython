@@ -5,6 +5,7 @@ from eval.cases_pack.d_sec_des_crypto import cases_sec_des_crypto
 from eval.cases_pack.e_nosql_ssrf_redos import cases_nosql_ssrf_redos
 from eval.cases_pack.f_special import cases_special
 from eval.cases_pack.g_jwt_cookies import cases_jwt_cookies
+from eval.cases_pack.h_realworld import cases_realworld
 
 
 def all_cases() -> list[dict]:
@@ -16,4 +17,5 @@ def all_cases() -> list[dict]:
         *cases_nosql_ssrf_redos(),
         *cases_jwt_cookies(),
         *cases_special(),
+        *cases_realworld(),
     ]

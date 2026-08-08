@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from analyzer.models.base import Base
@@ -8,12 +8,14 @@ from analyzer.models.base import Base
 
 class FindingModel(Base, kw_only=True):
     __tablename__ = "findings"
+    __table_args__ = (Index("ix_findings_scan_id", "scan_id"),)
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default_factory=lambda: str(uuid.uuid4())
     )
     scan_id: Mapped[str] = mapped_column(String(36), ForeignKey("scans.id"), default="")
     rule_id: Mapped[str] = mapped_column(String(30), default="")
+    title: Mapped[str] = mapped_column(String(200), default="")
     severity: Mapped[str] = mapped_column(String(10), default="")
     confidence: Mapped[str] = mapped_column(String(10), default="")
     file_path: Mapped[str] = mapped_column(String(500), default="")

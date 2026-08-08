@@ -34,10 +34,15 @@ def require_api_key(
     settings: Annotated[Settings, Depends(get_settings)],
     x_api_key: Annotated[str | None, Header()] = None,
 ) -> None:
-    """When ANALYZER_API_KEY is set, require matching X-API-Key header."""
+    """Require X-API-Key when configured, or whenever not in debug mode."""
     expected = settings.api_key
     if not expected:
-        return
+        if settings.debug:
+            return
+        raise HTTPException(
+            status_code=401,
+            detail="ANALYZER_API_KEY is required (set key or ANALYZER_DEBUG=true)",
+        )
     provided = x_api_key or ""
     if not hmac.compare_digest(provided, expected):
         raise HTTPException(status_code=401, detail="invalid or missing API key")

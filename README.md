@@ -23,11 +23,11 @@ uvicorn analyzer.main:app --reload --port 8000
 ### Docker
 
 ```bash
-cp .env.example .env   # set POSTGRES_PASSWORD / REDIS_PASSWORD (and optionally ANALYZER_API_KEY)
+cp .env.example .env   # set strong POSTGRES_PASSWORD / REDIS_PASSWORD / ANALYZER_API_KEY (non-empty)
 docker compose up --build
 ```
 
-Postgres and Redis are **not** published to the host (internal Docker network only). The API on `:8000` is still reachable on the LAN; set `ANALYZER_API_KEY` and send `X-API-Key` once API auth is enabled (see Configuration).
+Postgres and Redis are **not** published to the host (internal Docker network only). Compose **requires** a non-empty `ANALYZER_API_KEY` (`${ANALYZER_API_KEY:?…}` fails if empty). Send `X-API-Key` on analyze/results/rules. Local open mode without compose: `ANALYZER_DEBUG=true` and unset key for uvicorn/pytest.
 
 ### Run Tests
 
@@ -40,9 +40,9 @@ pytest tests/ -v
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/v1/analyze/sync` | Synchronous analysis (< 50 KB); JSON or SARIF (see below) |
-| POST | `/api/v1/analyze/bundle/sync` | Multi-file JSON body (`files` map); merged function index for taint; caps via `ANALYZER_MAX_BUNDLE_*` |
+| POST | `/api/v1/analyze/bundle/sync` | Multi-file JSON body (`files` map); relative import fn index (+ optional `tsconfig_paths`); caps via `ANALYZER_MAX_BUNDLE_*` |
 | POST | `/api/v1/analyze/async` | Async analysis via Celery; poll `GET /results/{scan_id}` |
-| GET | `/api/v1/results/{scan_id}` | Async status: `pending`, or completed body (same shape as sync JSON), or `failed` |
+| GET | `/api/v1/results/{scan_id}` | Async status from Postgres: `pending`/`running`, or completed/`partial` body, or `failed` |
 | GET | `/api/v1/rules` | List available rules |
 | GET | `/api/v1/health` | Health check |
 
@@ -53,13 +53,13 @@ pytest tests/ -v
 
 ### Async polling
 
-1. `POST /api/v1/analyze/async` returns `scan_id` and `poll_url`.
-2. `GET /api/v1/results/{scan_id}`:
+1. `POST /api/v1/analyze/async` returns `scan_id`, `poll_url`, and **`status: "queued"`** (legacy client value). The DB row is `pending` until the worker sets `running` / a terminal status. Source is stored in Redis and also passed in the task args for rolling upgrades.
+2. `GET /api/v1/results/{scan_id}` (Postgres is source of truth):
    - **404** if the `scan_id` is unknown or not a UUID.
-   - **200** `{ "status": "pending", "scan_id": "..." }` while the Celery task is queued/running.
-   - **200** completed: same fields as sync JSON (including `findings`, `stats`, …) with **`"status": "completed"`**.
-   - **200** `{ "status": "failed", "scan_id": "...", "error": "..." }` on task failure.
-   - **503** if Redis is unavailable.
+   - **200** `{ "status": "pending"|"running", "scan_id": "..." }` while queued/running.
+   - **200** completed/`partial`: same fields as sync JSON (`findings`, `stats`, …). `partial` means the wall-clock analysis budget was hit.
+   - **200** `{ "status": "failed", "scan_id": "...", "error": "...", "error_code": "..." }` on failure.
+   - **503** if the database is unavailable.
 
 ## Example request
 
@@ -74,7 +74,7 @@ curl -X POST http://localhost:8000/api/v1/analyze/sync \
   }'
 ```
 
-Omit `X-API-Key` when `ANALYZER_API_KEY` is unset (local pytest / open local uvicorn).
+Omit `X-API-Key` only when `ANALYZER_DEBUG=true` and `ANALYZER_API_KEY` is unset (local pytest / open local uvicorn). Non-debug mode requires a key.
 
 ## Example code snippets and scanner output
 
@@ -190,7 +190,7 @@ app.get('/', (req, res) => {
 - **Sources:** Express-style `req.*` (including Multer `req.file` / `req.files`), Koa, Fastify, `process.*`, etc. — see `src/analyzer/taint/sources_sinks.py`.
 - **Sinks:** SQL (`db.query`, Prisma `$queryRaw` / `$executeRaw`, …), `exec`/`eval`, `fs.*`, redirects, etc.
 - **Parameterized SQL:** for calls like `db.query('… $1 …', [values])`, taint only in the values argument is treated as binding, not as SQL text injection (see `tracker.py`).
-- **Same-file inter-procedural:** taint is bound from call arguments into the callee’s parameters when the callee resolves to an indexed function—either a bare identifier (`run(x)`) or a **member call** whose **property name** matches a same-file top-level or `const`/`var` function (`o.run(x)` → `function run` / `const run = …`). Depth is capped at `MAX_INTERPROC_DEPTH` in `tracker.py` (default 5). **Optional chaining** (`req?.body`, `db?.query`) is normalized for source/sink pattern matching. **Return taint:** `const x = foo()` walks `foo`’s body and uses the first `return` expression to mark `x` tainted when arguments carry taint (same depth cap). **Template literals:** `${...}` inside templates is analyzed via `template_substitution` nodes. **Object spread:** `{ ...req.body }` is treated as tainted when the spread operand matches request-source patterns. **SQL sinks:** any `receiver.query(...)`-style member call whose method name matches a configured SQL sink (e.g. `query`, `$queryRaw`) is treated as a SQL sink, not only `db.query`. **Multi-file (bundle API):** `POST /api/v1/analyze/bundle/sync` merges function indices from all paths then runs taint per file so callees defined in another entry (e.g. `lib/helpers.js`) can be resolved from `app/routes.js`. **Not supported:** object-literal method shorthand as callee body unless also declared in the function index; true `import`/`require` graph (list all defining files in `files` explicitly).
+- **Same-file inter-procedural:** taint is bound from call arguments into the callee’s parameters when the callee resolves to an indexed function—either a bare identifier (`run(x)`) or a **member call** whose **property name** matches a same-file top-level or `const`/`var` function (`o.run(x)` → `function run` / `const run = …`). Depth is capped at `MAX_INTERPROC_DEPTH` in `tracker.py` (default 5). **Optional chaining** (`req?.body`, `db?.query`) is normalized for source/sink pattern matching. **Return taint:** `const x = foo()` walks `foo`’s body and uses the first `return` expression to mark `x` tainted when arguments carry taint (same depth cap). **Template literals:** `${...}` inside templates is analyzed via `template_substitution` nodes. **Object spread:** `{ ...req.body }` is treated as tainted when the spread operand matches request-source patterns. **SQL sinks:** `receiver.query(...)` when receiver is on the SQL allowlist (`db`, `pool`, `dbConn`, …); `ANALYZER_SQL_SINK_ALLOWLIST=false` restores any-receiver mode. **Multi-file (bundle API):** per-file function index plus resolved relative `require`/`import` (and `index.js` / optional `tsconfig_paths`); not a full merge of every bundle path. **Not supported:** object-literal method shorthand unless indexed; unresolved package imports outside the `files` map.
 - **Pattern overlap:** longer `req.*` patterns are preferred (e.g. `req.files` over `req.file`) when both match.
 - **Tests:** `tests/test_taint/test_taint_sources_sinks_matrix.py`, `tests/test_taint/test_taint_interprocedural.py`, `tests/test_taint/test_js_taint.py`.
 
@@ -258,20 +258,9 @@ Example:
 
 ### Current catalog compare vs Semgrep
 
-Numbers below are from **`eval.cli compare`** on the **internal catalog** above (**`eval/catalog/cases.json`**, 87 non-`SKIP` cases), Semgrep **`--config .vendor/semgrep-rules/javascript`**, and **`eval/catalog/rule_map.yaml`** `equivalence_rules` as committed. Recorded **2026-03-26** (refreshed against **`uvicorn analyzer.main:app` on `http://127.0.0.1:8001`** from git **`b59ef6c`**; Semgrep **1.156.0**; semgrep-rules **`28db38e`**). Re-run the compare command in [Reproducing the catalog benchmark](#reproducing-the-catalog-benchmark) to refresh; **`compare_summary.json` is not in git**. A Docker API on **:8000** without **`docker compose build`** may still reflect an older image and lower **TP** / higher **FN**.
+**In-process catalog gate (CI):** `run_catalog_inprocess(load_catalog())` — current gold outcomes **TP 52 / TN 37 / FN 0 / FP 7** (refreshed **2026-08-08**, includes `h_realworld` Nest/Next snippets). CI fails if `FN > 0` or `FP > 10`.
 
-| Metric | Value |
-|--------|------:|
-| Gold outcomes (catalog labels, same rows) | **TP** 45, **TN** 33, **FN** 2, **FP** 7 |
-| Sum of per-case `finding_count` (HTTP analyzer) | 76 |
-| Sum of per-case `finding_count` (Semgrep) | 27 |
-| Cases with any in-map Semgrep line (`semgrep_lines_in_map` non-empty) | 22 |
-| Cases with ≥1 **`line_overlap.matched_lines`** pair | 15 |
-| Total matched line pairs (sum of `len(matched_lines)`) | 16 |
-| Total analyzer-only lines (sum of `analyzer_only_lines`) | 31 |
-| Total Semgrep-only lines (sum of `semgrep_only_lines`) | 7 |
-
-Gold **TP/TN/FN/FP** are vs the catalog, not vs Semgrep. **`line_overlap`** is greedy pairing under `equivalence_rules` only (mapping-dependent agreement). Remaining catalog **FN** (2): **`NOSQL-HARD-VULN-01`**, **`SSRF-HARD-VULN-01`**.
+Historical Semgrep **`eval.cli compare`** numbers (HTTP vs Semgrep line overlap on the same catalog) from **2026-03-26** are outdated relative to the in-process gate; re-run compare locally to refresh Semgrep agreement stats (`compare_summary.json` is gitignored).
 
 ### Current `corpus_paper_eval` run (example: `semgrep-rules` `javascript/`)
 
@@ -318,7 +307,13 @@ Environment variables (prefix `ANALYZER_`):
 | `ANALYZER_REDIS_URL` | `redis://localhost:6379/0` | Redis connection (compose uses password URL) |
 | `ANALYZER_CELERY_BROKER_URL` | `redis://localhost:6379/1` | Celery broker |
 | `ANALYZER_CELERY_RESULT_BACKEND` | `redis://localhost:6379/2` | Celery result store |
-| `ANALYZER_API_KEY` | (unset) | When set, require `X-API-Key` on analyze/results/rules (`/health` stays public) |
+| `ANALYZER_API_KEY` | (unset) | Required unless `ANALYZER_DEBUG=true`; compose needs a non-empty value (`cp .env.example .env` then change the placeholder) |
+| `ANALYZER_RATE_LIMIT_PER_MINUTE` | `60` | Redis rate limit for analyze endpoints (0 disables) |
+| `ANALYZER_RATE_LIMIT_SYNC_PER_MINUTE` | `20` | Tighter cap for sync/bundle analyze |
+| `ANALYZER_TRUST_X_FORWARDED_FOR` | `false` | When true, rate-limit IP bucket may use `X-Forwarded-For` (only behind a trusted proxy) |
+| `ANALYZER_SCAN_STALE_AFTER_SECONDS` | `celery_time_limit+60` | Pending/running scans older than this are marked `failed` on poll (floored to Celery hard limit + 60s) |
+| `ANALYZER_PARALLEL_RULES` | `false` | **Experimental** — ThreadPool rule runs sharing one parse tree; keep off in production |
+| `ANALYZER_SQL_SINK_ALLOWLIST` | `true` | When true, SQL `*.query` sinks require a known DB receiver |
 | `ANALYZER_MAX_SOURCE_BYTES` | `5000000` | Max size for async analyze enqueue |
 | `ANALYZER_MAX_SYNC_SOURCE_BYTES` | `50000` | Max size for sync endpoint |
 | `ANALYZER_ANALYSIS_BUDGET_MS` | (unset) | Optional wall-clock limit (ms) for sync analysis: stops before further rules and skips taint if exceeded; `stats.time_budget_exceeded` is set |

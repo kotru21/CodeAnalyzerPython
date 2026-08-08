@@ -35,6 +35,7 @@ def test_analyze_sync_time_budget_stops_before_second_rule() -> None:
         resp = orch.analyze_sync(request)
 
     assert resp.stats.time_budget_exceeded is True
+    assert resp.status == "partial"
 
 
 def test_analyze_sync_no_budget_flag_when_unlimited() -> None:
