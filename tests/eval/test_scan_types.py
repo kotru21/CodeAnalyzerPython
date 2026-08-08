@@ -19,6 +19,16 @@ def test_maps_rule_and_line() -> None:
     assert out[0].line == 3
 
 
+def test_prefers_line_start_from_api_schema() -> None:
+    body = {
+        "findings": [
+            {"rule_id": "JS-SQL-001", "line_start": 7, "line_end": 7},
+        ],
+    }
+    out = findings_from_analyzer_response(body)
+    assert out[0].line == 7
+
+
 def test_analyzer_response_to_result_ok() -> None:
     body = {"findings": [{"rule_id": "a", "line": 1}], "stats": {}}
     r = analyzer_response_to_result(body, None)

@@ -14,8 +14,11 @@ uvicorn analyzer.main:app --reload --port 8000
 ### Docker
 
 ```bash
-docker-compose up --build
+cp .env.example .env   # set POSTGRES_PASSWORD / REDIS_PASSWORD (and optionally ANALYZER_API_KEY)
+docker compose up --build
 ```
+
+Postgres and Redis are **not** published to the host (internal Docker network only). The API on `:8000` is still reachable on the LAN; set `ANALYZER_API_KEY` and send `X-API-Key` once API auth is enabled (see Configuration).
 
 ### Run Tests
 
@@ -54,12 +57,15 @@ pytest tests/ -v
 ```bash
 curl -X POST http://localhost:8000/api/v1/analyze/sync \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: $ANALYZER_API_KEY" \
   -d '{
     "source_code": "db.query(`SELECT * FROM users WHERE id = ${req.params.id}`);",
     "file_path": "app.js",
     "config": { "enable_taint": true }
   }'
 ```
+
+Omit `X-API-Key` when `ANALYZER_API_KEY` is unset (local pytest / open local uvicorn).
 
 ## Example code snippets and scanner output
 
@@ -156,8 +162,9 @@ app.get('/', (req, res) => {
 | Rule ID | Vulnerability | Severity |
 |---------|---------------|----------|
 | JS-SQL-001 | SQL Injection | CRITICAL |
-| JS-XSS-001 | Reflected XSS | HIGH |
+| JS-XSS-001 | Reflected XSS (DOM) | HIGH |
 | JS-XSS-002 | dangerouslySetInnerHTML | HIGH |
+| JS-XSS-003 | Reflected XSS (response send) | HIGH |
 | JS-CMD-001 | Command Injection | CRITICAL |
 | JS-PATH-001 | Path Traversal | HIGH |
 | JS-PROTO-001 | Prototype Pollution | HIGH |
@@ -298,10 +305,12 @@ Environment variables (prefix `ANALYZER_`):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ANALYZER_DATABASE_URL` | `postgresql://analyzer:analyzer@localhost:5432/analyzer` | PostgreSQL connection |
-| `ANALYZER_REDIS_URL` | `redis://localhost:6379/0` | Redis connection |
+| `ANALYZER_DATABASE_URL` | `postgresql://analyzer:analyzer@localhost:5432/analyzer` | PostgreSQL connection (compose uses `POSTGRES_PASSWORD`) |
+| `ANALYZER_REDIS_URL` | `redis://localhost:6379/0` | Redis connection (compose uses password URL) |
 | `ANALYZER_CELERY_BROKER_URL` | `redis://localhost:6379/1` | Celery broker |
 | `ANALYZER_CELERY_RESULT_BACKEND` | `redis://localhost:6379/2` | Celery result store |
+| `ANALYZER_API_KEY` | (unset) | When set, require `X-API-Key` on analyze/results/rules (`/health` stays public) |
+| `ANALYZER_MAX_SOURCE_BYTES` | `5000000` | Max size for async analyze enqueue |
 | `ANALYZER_MAX_SYNC_SOURCE_BYTES` | `50000` | Max size for sync endpoint |
 | `ANALYZER_ANALYSIS_BUDGET_MS` | (unset) | Optional wall-clock limit (ms) for sync analysis: stops before further rules and skips taint if exceeded; `stats.time_budget_exceeded` is set |
 | `ANALYZER_MAX_BUNDLE_FILES` | `32` | Max entries in `analyze/bundle/sync` `files` map |

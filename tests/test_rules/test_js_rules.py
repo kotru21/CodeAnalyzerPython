@@ -114,6 +114,24 @@ function UserProfile({ data }) {
         "should_detect": False,
         "rule_id": "JS-XSS-002",
     },
+    {
+        "id": "xss-res-send-dynamic",
+        "code": """
+app.get('/x', (req, res) => {
+    res.send(req.query.msg);
+});
+""",
+        "should_detect": True,
+        "rule_id": "JS-XSS-003",
+    },
+    {
+        "id": "xss-socket-send-not-response-xss",
+        "code": """
+socket.send(req.query.msg);
+""",
+        "should_detect": False,
+        "rule_id": "JS-XSS-003",
+    },
 ]
 
 

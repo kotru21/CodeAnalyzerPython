@@ -16,8 +16,10 @@ htmlcov/
 # Local clones (e.g. semgrep-rules for scripts/corpus_paper_eval.py)
 .vendor/
 
-# Git worktrees (subagent-driven development)
+# Git worktrees
 .worktrees/
+
+.cursor/
 
 eval/results/*.json
 eval/results/report.md

@@ -13,7 +13,7 @@ from analyzer.taint.source_match import find_matching_source
 from analyzer.taint.sources_sinks import (
     COMMAND_SINK_METHOD_NAMES,
     HTTP_METHOD_SINKS,
-    NON_HTTP_RECEIVER_NAMES,
+    HTTP_RECEIVER_ALLOWLIST,
     NOSQL_SINK_METHODS,
     SINK_IDENTIFIERS,
     SINK_MEMBER_PATTERNS,
@@ -22,6 +22,24 @@ from analyzer.taint.sources_sinks import (
 )
 
 MAX_INTERPROC_DEPTH = 5
+
+# Only these wrappers propagate taint from args when interproc does not resolve.
+_TRANSPARENT_WRAPPERS: frozenset[str] = frozenset(
+    {
+        "String",
+        "Boolean",
+        "encodeURIComponent",
+        "encodeURI",
+        "decodeURIComponent",
+        "decodeURI",
+        "path.resolve",
+        "path.normalize",
+        "path.join",
+        "path.basename",
+        "path.dirname",
+        "Promise.resolve",
+    }
+)
 
 
 def _normalize_optional_access(text: str) -> str:
@@ -179,6 +197,7 @@ class TaintTracker:
             self._handle_assignment(
                 node, tainted, sanitized, flows, ctx, fn_index, depth
             )
+            self._check_assignment_sink(node, tainted, sanitized, flows, ctx)
         elif node.type == "call_expression":
             self._check_sink(node, tainted, sanitized, flows, ctx)
             self._maybe_analyze_callee_interproc(
@@ -364,6 +383,9 @@ class TaintTracker:
             else:
                 bind_pattern_from_source(name_node, source, tainted)
             return
+        if name_node.type == "identifier":
+            tainted.pop(var_name, None)
+            sanitized.pop(var_name, None)
 
     def _handle_assignment(
         self,
@@ -404,6 +426,9 @@ class TaintTracker:
         source = self._extract_source(right, tainted)
         if source:
             tainted[var_name] = source
+        elif left.type == "identifier":
+            tainted.pop(var_name, None)
+            sanitized.pop(var_name, None)
 
     def _extract_source(self, node: Node, tainted: dict[str, str]) -> str | None:
         if node.type in ("identifier", "member_expression"):
@@ -415,6 +440,36 @@ class TaintTracker:
 
         if node.type == "identifier" and text in tainted:
             return tainted[text]
+
+        if node.type == "await_expression":
+            for child in node.children:
+                if child.is_named:
+                    return self._extract_source(child, tainted)
+            return None
+
+        if node.type == "ternary_expression":
+            for field in ("consequence", "alternative"):
+                ch = node.child_by_field_name(field)
+                if ch is not None:
+                    result = self._extract_source(ch, tainted)
+                    if result:
+                        return result
+            return None
+
+        if node.type == "call_expression":
+            func = node.child_by_field_name("function")
+            func_text = ""
+            if func is not None and func.text:
+                func_text = _normalize_optional_access(func.text.decode())
+            if func_text not in _TRANSPARENT_WRAPPERS:
+                return None
+            args = node.child_by_field_name("arguments")
+            if args is not None:
+                for arg in _positional_arguments(args):
+                    result = self._extract_source(arg, tainted)
+                    if result:
+                        return result
+            return None
 
         if node.type == "template_substitution":
             for child in node.children:
@@ -444,9 +499,37 @@ class TaintTracker:
 
     @staticmethod
     def _should_report_flow(taint_source: str, sink_method: str) -> bool:
-        if is_weak_source(taint_source) and sink_method not in COMMAND_SINK_METHOD_NAMES:
-            return False
-        return True
+        return not (is_weak_source(taint_source) and sink_method not in COMMAND_SINK_METHOD_NAMES)
+
+    def _check_assignment_sink(
+        self,
+        node: Node,
+        tainted: dict[str, str],
+        sanitized: dict[str, frozenset[str]],
+        flows: list[TaintFlow],
+        ctx: AnalysisContext,
+    ) -> None:
+        left = node.child_by_field_name("left")
+        right = node.child_by_field_name("right")
+        if left is None or right is None or left.type != "member_expression":
+            return
+        prop = left.child_by_field_name("property")
+        if prop is None:
+            return
+        prop_name = prop.text.decode() if prop.text else ""
+        if prop_name not in ("innerHTML", "outerHTML"):
+            return
+        taint_source = self._find_tainted_in_arg(right, tainted, sanitized, prop_name)
+        if taint_source and self._should_report_flow(taint_source, prop_name):
+            line = node.start_point[0] + 1
+            flows.append(
+                TaintFlow(
+                    source=taint_source,
+                    sink_method=prop_name,
+                    source_line=line,
+                    sink_line=line,
+                )
+            )
 
     def _check_sink(
         self,
@@ -514,9 +597,12 @@ class TaintTracker:
         text = node.text.decode() if node.text else ""
 
         if node.type == "identifier":
-            if text in sanitized and sink_method is not None:
-                if sanitizer_categories_cover_sink(sanitized[text], sink_method):
-                    return None
+            if (
+                text in sanitized
+                and sink_method is not None
+                and sanitizer_categories_cover_sink(sanitized[text], sink_method)
+            ):
+                return None
             if text in tainted:
                 return tainted[text]
 
@@ -559,9 +645,8 @@ class TaintTracker:
                 obj = func_node.child_by_field_name("object")
                 if obj is not None and obj.type == "identifier":
                     obj_name = obj.text.decode() if obj.text else ""
-                    if obj_name in NON_HTTP_RECEIVER_NAMES:
-                        return False
-                return True
+                    return obj_name in HTTP_RECEIVER_ALLOWLIST
+                return False
         return False
 
     @staticmethod

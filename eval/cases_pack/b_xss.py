@@ -88,6 +88,33 @@ app.get('/z', (req, res) => {
             "Доставка в textContent",
         ),
         mk(
+            "XSS3-EASY-VULN-01",
+            "JS-XSS-003",
+            "easy",
+            "vulnerable",
+            "app.js",
+            """app.get('/x', (req, res) => {
+  res.send(req.query.msg);
+});""",
+            "CWE-79",
+            "Express res.send с пользовательским вводом",
+            expected_findings=[
+                {"rule_id": "JS-XSS-003", "line": 2, "cwe_id": "CWE-79"},
+            ],
+        ),
+        mk(
+            "XSS3-EASY-SAFE-01",
+            "JS-XSS-003",
+            "easy",
+            "safe",
+            "app.js",
+            """app.get('/x', (req, res) => {
+  res.send('ok');
+});""",
+            None,
+            "res.send со строковым литералом",
+        ),
+        mk(
             "XSS2-EASY-VULN-01",
             "JS-XSS-002",
             "easy",

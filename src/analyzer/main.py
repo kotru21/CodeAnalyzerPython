@@ -7,11 +7,13 @@ from analyzer.config import get_settings
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    docs_url = "/docs" if settings.debug else None
+    openapi_url = "/openapi.json" if settings.debug else None
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
-        docs_url="/docs",
-        openapi_url="/openapi.json",
+        docs_url=docs_url,
+        openapi_url=openapi_url,
     )
     if settings.cors_origins:
         app.add_middleware(

@@ -1,12 +1,12 @@
+# Redis and Postgres are internal-only (no host port publish).
+# API on :8000 is still reachable on the LAN until Phase D API-key auth is enabled.
 services:
   db:
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: analyzer
-      POSTGRES_PASSWORD: analyzer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
       POSTGRES_DB: analyzer
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -17,10 +17,9 @@ services:
 
   redis:
     image: redis:8-alpine
-    ports:
-      - "6379:6379"
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-changeme}"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -30,10 +29,11 @@ services:
     ports:
       - "8000:8000"
     environment:
-      ANALYZER_DATABASE_URL: postgresql://analyzer:analyzer@db:5432/analyzer
-      ANALYZER_REDIS_URL: redis://redis:6379/0
-      ANALYZER_CELERY_BROKER_URL: redis://redis:6379/1
-      ANALYZER_CELERY_RESULT_BACKEND: redis://redis:6379/2
+      ANALYZER_DATABASE_URL: postgresql://analyzer:${POSTGRES_PASSWORD:-changeme}@db:5432/analyzer
+      ANALYZER_REDIS_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379/0
+      ANALYZER_CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379/1
+      ANALYZER_CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-changeme}@redis:6379/2
+      ANALYZER_API_KEY: ${ANALYZER_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy
@@ -46,10 +46,11 @@ services:
     build: .
     command: celery -A analyzer.workers.tasks worker --loglevel=info
     environment:
-      ANALYZER_DATABASE_URL: postgresql://analyzer:analyzer@db:5432/analyzer
-      ANALYZER_REDIS_URL: redis://redis:6379/0
-      ANALYZER_CELERY_BROKER_URL: redis://redis:6379/1
-      ANALYZER_CELERY_RESULT_BACKEND: redis://redis:6379/2
+      ANALYZER_DATABASE_URL: postgresql://analyzer:${POSTGRES_PASSWORD:-changeme}@db:5432/analyzer
+      ANALYZER_REDIS_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379/0
+      ANALYZER_CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379/1
+      ANALYZER_CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-changeme}@redis:6379/2
+      ANALYZER_API_KEY: ${ANALYZER_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy

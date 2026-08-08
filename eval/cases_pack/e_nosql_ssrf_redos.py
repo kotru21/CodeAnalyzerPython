@@ -130,14 +130,14 @@ app.get('/z', (req, res) => {
             "hard",
             "vulnerable",
             "app.js",
-            """function pull(client, url) {
-  return client.get(url);
+            """function pull(url) {
+  return axios.get(url);
 }
 app.get('/x', (req, res) => {
-  pull(axios, req.query.u);
+  pull(req.query.u);
 });""",
             "CWE-918",
-            "Inter-procedural HTTP",
+            "Inter-procedural HTTP via axios",
         ),
         mk(
             "SSRF-HARD-SAFE-01",
@@ -145,11 +145,11 @@ app.get('/x', (req, res) => {
             "hard",
             "safe",
             "app.js",
-            """function pull(client, url) {
-  return client.get(url);
+            """function pull() {
+  return axios.get('https://example.com');
 }
 app.get('/x', (req, res) => {
-  pull(axios, 'https://example.com');
+  pull();
 });""",
             None,
             "Константный URL в helper",

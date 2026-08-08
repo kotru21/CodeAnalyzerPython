@@ -26,6 +26,14 @@ class Settings(BaseSettings):
 
     # Wall-clock budget for analyze_sync (rules + optional taint). None = no limit.
     analysis_budget_ms: int | None = None
+    # Default budget applied to async Celery scans when request/config has none.
+    async_analysis_budget_ms: int = 120_000
+
+    # Shared secret; when set, require X-API-Key on analyze/results/rules.
+    api_key: str | None = None
+
+    celery_soft_time_limit_seconds: int = 180
+    celery_time_limit_seconds: int = 240
 
     max_bundle_files: int = 32
     max_bundle_total_bytes: int = 524_288

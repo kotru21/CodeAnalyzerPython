@@ -1,4 +1,6 @@
 # mypy: disable-error-code="import-untyped,no-untyped-def,untyped-decorator"
+from __future__ import annotations
+
 from celery import Celery
 
 from analyzer.config import get_settings
@@ -18,10 +20,12 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     result_expires=604_800,
+    task_soft_time_limit=settings.celery_soft_time_limit_seconds,
+    task_time_limit=settings.celery_time_limit_seconds,
 )
 
 
-@celery_app.task(name="analyzer.run_async_scan", bind=True, max_retries=2)
+@celery_app.task(name="analyzer.run_async_scan", bind=True)
 def run_async_scan(
     self,  # noqa: ANN001
     source_code: str,
@@ -31,8 +35,10 @@ def run_async_scan(
 ) -> dict:  # type: ignore[type-arg]
     from uuid import UUID
 
-    from analyzer.api.dependencies import get_orchestrator
+    from analyzer.api.dependencies import get_cwe_db, get_orchestrator
     from analyzer.api.schemas import AnalyzeRequest, ScanConfig
+    from analyzer.config import get_settings as _get_settings
+    from analyzer.core.orchestrator import Orchestrator
 
     scan_config = ScanConfig(**(config or {}))
     request = AnalyzeRequest(
@@ -42,7 +48,18 @@ def run_async_scan(
         scan_id=UUID(scan_id),
     )
 
-    orchestrator = get_orchestrator()
-    result = orchestrator.analyze_sync(request)
+    worker_settings = _get_settings()
+    if worker_settings.analysis_budget_ms is None and worker_settings.async_analysis_budget_ms > 0:
+        orch_settings = worker_settings.model_copy(
+            update={"analysis_budget_ms": worker_settings.async_analysis_budget_ms}
+        )
+        try:
+            cwe = get_cwe_db()
+        except Exception:  # noqa: BLE001
+            cwe = None
+        orchestrator = Orchestrator(settings=orch_settings, cwe_db=cwe)
+    else:
+        orchestrator = get_orchestrator()
 
+    result = orchestrator.analyze_sync(request)
     return result.model_dump(mode="json")

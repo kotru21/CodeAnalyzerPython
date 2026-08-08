@@ -132,16 +132,16 @@ HTTP_METHOD_SINKS: frozenset[str] = frozenset({
     "request",
 })
 
-# Receivers whose `.get`/`.post` are not outbound HTTP (e.g. db.get, app.get routes).
-NON_HTTP_RECEIVER_NAMES: frozenset[str] = frozenset({
-    "app",
-    "router",
-    "server",
-    "db",
-    "req",
-    "res",
-    "cache",
-    "redis",
-    "store",
-    "session",
+# Only well-known HTTP client receivers (avoid Map.get, headers.get, generic client/api).
+HTTP_RECEIVER_ALLOWLIST: frozenset[str] = frozenset({
+    "axios",
+    "http",
+    "https",
+    "fetch",
+    "request",
+    "got",
+    "superagent",
+    "httpClient",
+    "undici",
+    "needle",
 })

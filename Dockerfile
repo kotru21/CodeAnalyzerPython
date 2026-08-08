@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS base
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
@@ -8,10 +8,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY pyproject.toml .
 COPY src/analyzer/__init__.py src/analyzer/__init__.py
-RUN pip install --no-cache-dir ".[dev]"
+RUN pip install --no-cache-dir --prefix=/install .
 
 COPY . .
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir --prefix=/install .
+
+
+FROM python:3.12-slim AS runtime
+
+WORKDIR /app
+
+RUN useradd --create-home --uid 10001 analyzer
+
+COPY --from=builder /install /usr/local
+COPY --chown=analyzer:analyzer data ./data
+COPY --chown=analyzer:analyzer src ./src
+COPY --chown=analyzer:analyzer pyproject.toml ./
+
+ENV PYTHONPATH=/app/src
+USER analyzer
 
 EXPOSE 8000
 

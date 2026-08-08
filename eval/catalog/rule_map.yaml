@@ -9,6 +9,9 @@ rules:
   JS-SQL-001: [.vendor/semgrep-rules/javascript]
   JS-XSS-001: [.vendor/semgrep-rules/javascript]
   JS-XSS-002: [.vendor/semgrep-rules/javascript]
+  JS-XSS-003: [.vendor/semgrep-rules/javascript]
+  JS-COOKIE-001: [.vendor/semgrep-rules/javascript]
+  JS-JWT-001: [.vendor/semgrep-rules/javascript]
   JS-CMD-001: [.vendor/semgrep-rules/javascript]
   JS-PATH-001: [.vendor/semgrep-rules/javascript]
   JS-PROTO-001: [.vendor/semgrep-rules/javascript]
@@ -29,6 +32,9 @@ equivalence_rules:
   JS-XSS-002:
     - vendor.semgrep-rules.javascript.browser.security.insecure-document-method
     - vendor.semgrep-rules.javascript.browser.security.insecure-innerhtml
+  JS-XSS-003: []
+  JS-COOKIE-001: []
+  JS-JWT-001: []
   JS-CMD-001:
     - vendor.semgrep-rules.javascript.lang.security.detect-child-process
   JS-PATH-001:

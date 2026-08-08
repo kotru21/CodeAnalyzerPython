@@ -33,9 +33,7 @@ def matches_taint_source(node: Node, pattern: str) -> bool:
     dotted = chain_to_dotted(parts)
     if dotted == pattern:
         return True
-    if dotted.startswith(pattern + "."):
-        return True
-    return False
+    return bool(dotted.startswith(pattern + "."))
 
 
 def find_matching_source(node: Node) -> str | None:

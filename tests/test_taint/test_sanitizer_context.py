@@ -29,3 +29,68 @@ app.get('/x', (req, res) => {
 """
     flows = TaintTracker().analyze(make_js_context(code))
     assert not any(f.sink_method == "send" for f in flows)
+
+
+def test_path_resolve_does_not_sanitize_traversal():
+    code = """
+const path = require('path');
+app.get('/x', (req, res) => {
+  const p = path.resolve(req.query.f);
+  fs.readFile(p);
+});
+"""
+    flows = TaintTracker().analyze(make_js_context(code))
+    assert any(f.sink_method == "readFile" for f in flows)
+
+
+def test_encode_uri_component_does_not_sanitize_xss():
+    code = """
+app.get('/x', (req, res) => {
+  el.innerHTML = encodeURIComponent(req.query.x);
+});
+"""
+    flows = TaintTracker().analyze(make_js_context(code))
+    assert any(f.sink_method == "innerHTML" for f in flows)
+
+
+def test_bare_sanitize_substring_does_not_block_sql():
+    # Unknown wrappers are not sanitizers; taint still visible in sink args.
+    code = """
+app.get('/x', (req, res) => {
+  db.query(mysanitize(req.body.q));
+});
+"""
+    flows = TaintTracker().analyze(make_js_context(code))
+    assert any(f.sink_method == "query" for f in flows)
+
+
+def test_innerhtml_assignment_taint_confirmed():
+    code = """
+app.get('/x', (req, res) => {
+  el.innerHTML = req.query.x;
+});
+"""
+    flows = TaintTracker().analyze(make_js_context(code))
+    assert any(f.sink_method == "innerHTML" for f in flows)
+
+
+def test_await_propagates_taint():
+    code = """
+app.get('/x', async (req, res) => {
+  const q = await Promise.resolve(req.body.q);
+  db.query(q);
+});
+"""
+    flows = TaintTracker().analyze(make_js_context(code))
+    assert any(f.sink_method == "query" for f in flows)
+
+
+def test_string_wrapper_propagates_taint():
+    code = """
+app.get('/x', (req, res) => {
+  const q = String(req.body.q);
+  db.query(q);
+});
+"""
+    flows = TaintTracker().analyze(make_js_context(code))
+    assert any(f.sink_method == "query" for f in flows)

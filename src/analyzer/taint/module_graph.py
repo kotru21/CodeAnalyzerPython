@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import posixpath
 import re
-from collections.abc import Mapping, Sequence
+from typing import TYPE_CHECKING
 
-from tree_sitter import Node
-
-from analyzer.rules.base import AnalysisContext
 from analyzer.taint.tracker import merge_fn_index_from_roots
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+    from tree_sitter import Node
+
+    from analyzer.rules.base import AnalysisContext
 
 _REQUIRE_RE = re.compile(r"""require\(\s*['"](\./[^'"]+|\.\./[^'"]+)['"]\s*\)""")
 _IMPORT_RE = re.compile(r"""from\s+['"](\./[^'"]+|\.\./[^'"]+)['"]""")
@@ -125,7 +129,7 @@ def _match_bundle_path(files: Mapping[str, str], base_path: str, rel: str) -> st
             stem = stem[: -len(ext)]
             break
     for path in files:
-        if path == stem or path == candidate:
+        if path in (stem, candidate):
             return path
         path_stem = path
         for ext in (".js", ".ts", ".mjs", ".cjs"):
@@ -139,10 +143,13 @@ def _match_bundle_path(files: Mapping[str, str], base_path: str, rel: str) -> st
 
 def build_per_file_fn_index(
     contexts: Sequence[AnalysisContext],
-    merged_idx: dict[str, tuple[list[str], Node]],
     files: Mapping[str, str],
 ) -> dict[str, dict[str, tuple[list[str], Node]]]:
-    """Per consumer file: merged fn_index plus resolved require/import exports."""
+    """Per consumer file: local fn_index plus resolved require/import exports.
+
+    Does not merge same-named functions from unrelated bundle files (avoids
+    interproc body collisions and wrong finding locations).
+    """
     by_path = {ctx.file_path: ctx for ctx in contexts}
     file_indices = {
         path: merge_fn_index_from_roots([ctx.root_node])
@@ -151,7 +158,7 @@ def build_per_file_fn_index(
 
     result: dict[str, dict[str, tuple[list[str], Node]]] = {}
     for ctx in contexts:
-        idx = dict(merged_idx)
+        idx = dict(file_indices[ctx.file_path])
         for rel in parse_relative_imports(ctx.source_code):
             dep_path = _match_bundle_path(files, ctx.file_path, rel)
             if dep_path is None:

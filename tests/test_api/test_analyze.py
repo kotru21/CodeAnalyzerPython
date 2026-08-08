@@ -74,6 +74,14 @@ app.get('/run', (req, res) => {
         )
         assert resp.status_code == 422
 
+    async def test_unsupported_extension_returns_400(self, client: AsyncClient):
+        resp = await client.post(
+            "/api/v1/analyze/sync",
+            json={"source_code": "print(1)\n", "file_path": "app.py"},
+        )
+        assert resp.status_code == 400
+        assert "unsupported" in resp.json()["detail"].lower()
+
     async def test_response_contains_cwe_info(self, client: AsyncClient):
         resp = await client.post(
             "/api/v1/analyze/sync",

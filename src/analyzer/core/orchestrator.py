@@ -20,8 +20,54 @@ from analyzer.parsers.factory import get_parser
 from analyzer.rules.base import AnalysisContext, BaseRule, RawFinding
 from analyzer.rules.registry import get_rules_for_language
 from analyzer.taint.module_graph import build_per_file_fn_index
-from analyzer.taint.tracker import TaintFlow, TaintTracker, merge_fn_index_from_roots
+from analyzer.taint.sanitizers import SINK_CATEGORY_BY_METHOD
+from analyzer.taint.tracker import TaintFlow, TaintTracker
 from analyzer.utils.hash import md5_fingerprint
+
+# sink_method (tracker) → rule_id for taint-confirmed findings
+_FLOW_RULE_MAP: dict[str, str] = {
+    "query": "JS-SQL-001",
+    "$queryRaw": "JS-SQL-001",
+    "$executeRaw": "JS-SQL-001",
+    "raw": "JS-SQL-001",
+    "execute": "JS-SQL-001",
+    "exec": "JS-CMD-001",
+    "execSync": "JS-CMD-001",
+    "eval": "JS-CMD-001",
+    "redirect": "JS-REDIRECT-001",
+    "send": "JS-XSS-003",
+    "innerHTML": "JS-XSS-001",
+    "outerHTML": "JS-XSS-001",
+    "write": "JS-XSS-001",
+    "writeln": "JS-XSS-001",
+    "readFile": "JS-PATH-001",
+    "readFileSync": "JS-PATH-001",
+    "writeFile": "JS-PATH-001",
+    "writeFileSync": "JS-PATH-001",
+    "find": "JS-NOSQL-001",
+    "findOne": "JS-NOSQL-001",
+    "findOneAndUpdate": "JS-NOSQL-001",
+    "updateOne": "JS-NOSQL-001",
+    "deleteOne": "JS-NOSQL-001",
+    "aggregate": "JS-NOSQL-001",
+    "fetch": "JS-SSRF-001",
+    "get": "JS-SSRF-001",
+    "post": "JS-SSRF-001",
+    "put": "JS-SSRF-001",
+    "patch": "JS-SSRF-001",
+    "delete": "JS-SSRF-001",
+    "head": "JS-SSRF-001",
+    "request": "JS-SSRF-001",
+}
+
+_CATEGORY_RULE_FALLBACK: dict[str, str] = {
+    "sql": "JS-SQL-001",
+    "command": "JS-CMD-001",
+    "xss": "JS-XSS-001",
+    "path": "JS-PATH-001",
+    "ssrf": "JS-SSRF-001",
+    "redirect": "JS-REDIRECT-001",
+}
 
 _logger = logging.getLogger(__name__)
 
@@ -147,10 +193,7 @@ class Orchestrator:
             allowed = set(request.config.rule_ids)
             rules = [r for r in rules if r.meta().rule_id in allowed]
 
-        merged_idx = merge_fn_index_from_roots([c.root_node for c in contexts])
-        per_file_fn_index = build_per_file_fn_index(
-            contexts, merged_idx, request.files
-        )
+        per_file_fn_index = build_per_file_fn_index(contexts, request.files)
         raw_findings: list[RawFinding] = []
         failed_rules: list[str] = []
 
@@ -210,28 +253,11 @@ class Orchestrator:
         self, flows: list[TaintFlow], *, file_path: str | None = None
     ) -> list[RawFinding]:
         results: list[RawFinding] = []
-        flow_rule_map = {
-            "query": "JS-SQL-001",
-            "$queryRaw": "JS-SQL-001",
-            "$executeRaw": "JS-SQL-001",
-            "exec": "JS-CMD-001",
-            "execSync": "JS-CMD-001",
-            "eval": "JS-CMD-001",
-            "redirect": "JS-REDIRECT-001",
-            "send": "JS-XSS-001",
-            "readFile": "JS-PATH-001",
-            "readFileSync": "JS-PATH-001",
-            "writeFile": "JS-PATH-001",
-            "writeFileSync": "JS-PATH-001",
-            "find": "JS-NOSQL-001",
-            "findOne": "JS-NOSQL-001",
-            "fetch": "JS-SSRF-001",
-            "get": "JS-SSRF-001",
-            "post": "JS-SSRF-001",
-            "request": "JS-SSRF-001",
-        }
         for flow in flows:
-            rule_id = flow_rule_map.get(flow.sink_method)
+            rule_id = _FLOW_RULE_MAP.get(flow.sink_method)
+            if rule_id is None:
+                cat = SINK_CATEGORY_BY_METHOD.get(flow.sink_method)
+                rule_id = _CATEGORY_RULE_FALLBACK.get(cat) if cat else None
             if rule_id:
                 results.append(
                     RawFinding(
@@ -247,9 +273,25 @@ class Orchestrator:
 
     @staticmethod
     def _deduplicate(findings: list[RawFinding]) -> list[RawFinding]:
+        """Merge rule+taint on same line; keep distinct when both have different columns."""
         merged: dict[str, RawFinding] = {}
         for f in findings:
-            key = md5_fingerprint(f.rule_id, str(f.line_start), f.file_path or "")
+            base = md5_fingerprint(f.rule_id, str(f.line_start), f.file_path or "")
+            existing = merged.get(base)
+            if (
+                existing is not None
+                and existing.column is not None
+                and f.column is not None
+                and existing.column != f.column
+            ):
+                key = md5_fingerprint(
+                    f.rule_id,
+                    str(f.line_start),
+                    str(f.column),
+                    f.file_path or "",
+                )
+            else:
+                key = base
             existing = merged.get(key)
             if existing is None:
                 merged[key] = f

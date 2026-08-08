@@ -14,4 +14,8 @@ _EXTENSION_MAP: dict[str, str] = {
 
 def detect_language(file_path: str) -> str:
     ext = Path(file_path).suffix.lower()
-    return _EXTENSION_MAP.get(ext, "javascript")
+    lang = _EXTENSION_MAP.get(ext)
+    if lang is None:
+        msg = f"unsupported file extension for analysis: {ext or '(none)'}"
+        raise ValueError(msg)
+    return lang

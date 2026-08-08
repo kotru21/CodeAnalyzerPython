@@ -36,7 +36,7 @@ def test_build_sarif_log_minimal_shape() -> None:
     doc = build_sarif_log(resp, tool_name="analyzer-service", tool_version="0.1.0")
     assert doc["version"] == "2.1.0"
     assert doc["runs"][0]["results"][0]["ruleId"] == "JS-SQL-001"
-    assert (
-        doc["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["region"]["startLine"]
-        == 1
-    )
+    region = doc["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["region"]
+    assert region["startLine"] == 1
+    # tree-sitter column 1 → SARIF 1-based column 2
+    assert region["startColumn"] == 2

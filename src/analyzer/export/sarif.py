@@ -65,7 +65,8 @@ def build_sarif_log(
                             "startLine": finding.line_start,
                             "endLine": finding.line_end,
                             **(
-                                {"startColumn": finding.column}
+                                # tree-sitter columns are 0-based; SARIF 2.1 is 1-based
+                                {"startColumn": finding.column + 1}
                                 if finding.column is not None
                                 else {}
                             ),

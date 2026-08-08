@@ -50,9 +50,8 @@ def _binding_before_call_is_unsafe(root: Node, call_node: Node, ident: str) -> b
                 and n.start_byte < call_b
             ):
                 nm = vn.text.decode() if vn.text else ""
-                if nm == ident:
-                    if best is None or n.start_byte > best[0]:
-                        best = (n.start_byte, vv)
+                if nm == ident and (best is None or n.start_byte > best[0]):
+                    best = (n.start_byte, vv)
         for c in n.children:
             visit(c)
 

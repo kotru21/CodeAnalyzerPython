@@ -45,7 +45,14 @@
       "enable_taint": true
     },
     "expected_cwe": "CWE-89",
-    "description": "Промежуточные переменные и шаблонная строка"
+    "description": "Промежуточные переменные и шаблонная строка",
+    "expected_findings": [
+      {
+        "rule_id": "JS-SQL-001",
+        "line": 4,
+        "cwe_id": "CWE-89"
+      }
+    ]
   },
   {
     "test_id": "SQL-MED-SAFE-01",
@@ -183,7 +190,14 @@
       "enable_taint": true
     },
     "expected_cwe": "CWE-79",
-    "description": "innerHTML с пользовательским вводом"
+    "description": "innerHTML с пользовательским вводом",
+    "expected_findings": [
+      {
+        "rule_id": "JS-XSS-001",
+        "line": 1,
+        "cwe_id": "CWE-79"
+      }
+    ]
   },
   {
     "test_id": "XSS1-EASY-SAFE-01",
@@ -249,6 +263,39 @@
     },
     "expected_cwe": null,
     "description": "Доставка в textContent"
+  },
+  {
+    "test_id": "XSS3-EASY-VULN-01",
+    "rule_id": "JS-XSS-003",
+    "difficulty": "easy",
+    "type": "vulnerable",
+    "file_path": "app.js",
+    "source_code": "app.get('/x', (req, res) => {\n  res.send(req.query.msg);\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": "CWE-79",
+    "description": "Express res.send с пользовательским вводом",
+    "expected_findings": [
+      {
+        "rule_id": "JS-XSS-003",
+        "line": 2,
+        "cwe_id": "CWE-79"
+      }
+    ]
+  },
+  {
+    "test_id": "XSS3-EASY-SAFE-01",
+    "rule_id": "JS-XSS-003",
+    "difficulty": "easy",
+    "type": "safe",
+    "file_path": "app.js",
+    "source_code": "app.get('/x', (req, res) => {\n  res.send('ok');\n});",
+    "config": {
+      "enable_taint": true
+    },
+    "expected_cwe": null,
+    "description": "res.send со строковым литералом"
   },
   {
     "test_id": "XSS2-EASY-VULN-01",
@@ -932,12 +979,12 @@
     "difficulty": "hard",
     "type": "vulnerable",
     "file_path": "app.js",
-    "source_code": "function pull(client, url) {\n  return client.get(url);\n}\napp.get('/x', (req, res) => {\n  pull(axios, req.query.u);\n});",
+    "source_code": "function pull(url) {\n  return axios.get(url);\n}\napp.get('/x', (req, res) => {\n  pull(req.query.u);\n});",
     "config": {
       "enable_taint": true
     },
     "expected_cwe": "CWE-918",
-    "description": "Inter-procedural HTTP"
+    "description": "Inter-procedural HTTP via axios"
   },
   {
     "test_id": "SSRF-HARD-SAFE-01",
@@ -945,7 +992,7 @@
     "difficulty": "hard",
     "type": "safe",
     "file_path": "app.js",
-    "source_code": "function pull(client, url) {\n  return client.get(url);\n}\napp.get('/x', (req, res) => {\n  pull(axios, 'https://example.com');\n});",
+    "source_code": "function pull() {\n  return axios.get('https://example.com');\n}\napp.get('/x', (req, res) => {\n  pull();\n});",
     "config": {
       "enable_taint": true
     },

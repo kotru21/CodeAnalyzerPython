@@ -10,18 +10,12 @@ class Sanitizer:
     description: str
 
 
+# Exact callee match only (no substring / generic cross-category sanitizers).
 SANITIZERS: list[Sanitizer] = [
     Sanitizer("validator.escape", "xss", "validator.js escape function"),
     Sanitizer("DOMPurify.sanitize", "xss", "DOMPurify sanitization"),
-    Sanitizer("encodeURIComponent", "xss", "URI component encoding"),
-    Sanitizer("encodeURI", "xss", "URI encoding"),
-    Sanitizer("escape", "xss", "Generic escape function"),
-    Sanitizer("sanitize", "generic", "Generic sanitize function"),
     Sanitizer("parseInt", "type_cast", "Parse to integer (strips non-numeric)"),
     Sanitizer("Number", "type_cast", "Cast to number"),
-    Sanitizer("path.resolve", "path", "Resolve to absolute path"),
-    Sanitizer("path.normalize", "path", "Normalize path"),
-    Sanitizer("path.basename", "path", "Extract basename"),
 ]
 
 SANITIZER_NAMES: frozenset[str] = frozenset(s.pattern.split(".")[-1] for s in SANITIZERS)
@@ -49,21 +43,17 @@ def is_sanitizer_call(func_text: str) -> bool:
 
 
 def sanitizer_categories_for_call(func_text: str) -> frozenset[str]:
-    cats: set[str] = set()
-    for pattern, category in SANITIZER_BY_PATTERN.items():
-        if pattern in func_text:
-            cats.add(category)
-    return frozenset(cats)
+    """Return categories only when func_text exactly matches a known sanitizer pattern."""
+    cat = SANITIZER_BY_PATTERN.get(func_text)
+    if cat is None:
+        return frozenset()
+    return frozenset({cat})
 
 
 def _categories_cover_sink_category(cats: frozenset[str], sink_category: str) -> bool:
-    if "generic" in cats:
-        return True
     if sink_category in cats:
         return True
-    if "type_cast" in cats and sink_category == "sql":
-        return True
-    return False
+    return bool("type_cast" in cats and sink_category == "sql")
 
 
 def sanitizer_applies_to_sink(func_text: str, sink_method: str) -> bool:

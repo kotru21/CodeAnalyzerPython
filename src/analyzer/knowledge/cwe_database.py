@@ -77,11 +77,14 @@ _db: CWEDatabase | None = None
 
 
 def get_cwe_database(xml_path: Path | None = None) -> CWEDatabase:
+    """Return process-wide CWE DB; reload if first load left it empty and path exists."""
     global _db
     if _db is None:
         _db = CWEDatabase()
-        if xml_path:
+        if xml_path is not None:
             _db.load(xml_path)
+    elif _db.size == 0 and xml_path is not None and xml_path.exists():
+        _db.load(xml_path)
     return _db
 
 

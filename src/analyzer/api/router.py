@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 from uuid import UUID, uuid4
 
@@ -6,7 +7,7 @@ from celery.result import AsyncResult
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
-from analyzer.api.dependencies import get_orchestrator, get_redis_client
+from analyzer.api.dependencies import get_orchestrator, get_redis_client, require_api_key
 from analyzer.api.schemas import (
     AnalyzeBundleRequest,
     AnalyzeRequest,
@@ -22,14 +23,17 @@ from analyzer.rules.registry import get_all_rules, get_rules_for_language
 from analyzer.services.scan_task_registry import get_task_id, register_scan_task
 from analyzer.workers.tasks import celery_app, run_async_scan
 
+_logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/v1")
 
 
 @router.post("/analyze/sync", response_model=None)
-async def analyze_sync(
+def analyze_sync(
     request: AnalyzeRequest,
     orchestrator: Annotated[Orchestrator, Depends(get_orchestrator)],
     settings: Annotated[Settings, Depends(get_settings)],
+    _: Annotated[None, Depends(require_api_key)],
 ) -> AnalyzeResponse | JSONResponse:
     if len(request.source_code.encode()) > settings.max_sync_source_bytes:
         raise HTTPException(
@@ -39,7 +43,10 @@ async def analyze_sync(
                 f"Max: {settings.max_sync_source_bytes} bytes. Use /analyze/async."
             ),
         )
-    result = orchestrator.analyze_sync(request)
+    try:
+        result = orchestrator.analyze_sync(request)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     if request.response_format == "sarif":
         doc = build_sarif_log(
             result,
@@ -52,10 +59,11 @@ async def analyze_sync(
 
 
 @router.post("/analyze/bundle/sync", response_model=None)
-async def analyze_bundle_sync(
+def analyze_bundle_sync(
     request: AnalyzeBundleRequest,
     orchestrator: Annotated[Orchestrator, Depends(get_orchestrator)],
     settings: Annotated[Settings, Depends(get_settings)],
+    _: Annotated[None, Depends(require_api_key)],
 ) -> AnalyzeResponse | JSONResponse:
     nfiles = len(request.files)
     if nfiles > settings.max_bundle_files:
@@ -76,7 +84,10 @@ async def analyze_bundle_sync(
                 "Raise ANALYZER_MAX_BUNDLE_TOTAL_BYTES if needed."
             ),
         )
-    result = orchestrator.analyze_bundle_sync(request)
+    try:
+        result = orchestrator.analyze_bundle_sync(request)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     if request.response_format == "sarif":
         doc = build_sarif_log(
             result,
@@ -89,7 +100,10 @@ async def analyze_bundle_sync(
 
 
 @router.get("/rules", response_model=list[RuleInfo])
-async def list_rules(language: str | None = None) -> list[RuleInfo]:
+def list_rules(
+    _: Annotated[None, Depends(require_api_key)],
+    language: str | None = None,
+) -> list[RuleInfo]:
     rules = get_rules_for_language(language) if language else get_all_rules()
     return [
         RuleInfo(
@@ -106,18 +120,30 @@ async def list_rules(language: str | None = None) -> list[RuleInfo]:
 
 
 @router.post("/analyze/async", response_model=AsyncAnalyzeResponse)
-async def analyze_async(
+def analyze_async(
     request: AnalyzeRequest,
     settings: Annotated[Settings, Depends(get_settings)],
     redis_client: Annotated[redis.Redis, Depends(get_redis_client)],
+    _: Annotated[None, Depends(require_api_key)],
 ) -> AsyncAnalyzeResponse:
+    if len(request.source_code.encode()) > settings.max_source_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Source too large for async analysis. "
+                f"Max: {settings.max_source_bytes} bytes."
+            ),
+        )
     scan_id = str(uuid4())
+    config = request.config.model_dump(mode="json")
+
+    task = None
     try:
         task = run_async_scan.delay(
             source_code=request.source_code,
             file_path=request.file_path,
             scan_id=scan_id,
-            config=request.config.model_dump(mode="json"),
+            config=config,
         )
         register_scan_task(
             redis_client,
@@ -126,7 +152,12 @@ async def analyze_async(
             settings.scan_task_registry_ttl_seconds,
         )
     except redis.RedisError as e:
-        raise HTTPException(status_code=503, detail=f"redis error: {e}") from e
+        if task is not None:
+            try:
+                AsyncResult(task.id, app=celery_app).revoke(terminate=False)
+            except Exception:  # noqa: BLE001
+                _logger.exception("failed to revoke orphan celery task %s", task.id)
+        raise HTTPException(status_code=503, detail="redis unavailable") from e
     return AsyncAnalyzeResponse(
         task_id=task.id,
         scan_id=UUID(scan_id),
@@ -136,9 +167,10 @@ async def analyze_async(
 
 
 @router.get("/results/{scan_id}")
-async def get_results(
+def get_results(
     scan_id: str,
     redis_client: Annotated[redis.Redis, Depends(get_redis_client)],
+    _: Annotated[None, Depends(require_api_key)],
 ) -> dict:  # type: ignore[type-arg]
     try:
         UUID(scan_id)
@@ -147,7 +179,7 @@ async def get_results(
     try:
         task_id = get_task_id(redis_client, scan_id)
     except redis.RedisError as e:
-        raise HTTPException(status_code=503, detail=f"redis error: {e}") from e
+        raise HTTPException(status_code=503, detail="redis unavailable") from e
     if not task_id:
         raise HTTPException(status_code=404, detail="unknown scan_id")
 
@@ -166,8 +198,9 @@ async def get_results(
         out = dict(payload)
         out["status"] = "completed"
         return out
-    err = str(ar.info) if ar.info is not None else "task failed"
-    return {"status": "failed", "scan_id": scan_id, "error": err}
+    if ar.info is not None:
+        _logger.warning("async scan %s failed: %s", scan_id, ar.info)
+    return {"status": "failed", "scan_id": scan_id, "error": "task failed"}
 
 
 @router.get("/health", response_model=HealthResponse)

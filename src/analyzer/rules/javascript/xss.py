@@ -83,6 +83,68 @@ class ReflectedXSSRule(BaseRule):
         )
 
 
+class ResponseXSSRule(BaseRule):
+    """Express/response body XSS (res.send with non-literal argument)."""
+
+    def meta(self) -> RuleMeta:
+        return RuleMeta(
+            rule_id="JS-XSS-003",
+            title="Reflected XSS via response send",
+            severity=Severity.HIGH,
+            confidence=Confidence.MEDIUM,
+            cwe_id="CWE-79",
+            owasp="A03:2021 Injection",
+            description=(
+                "User-controlled data is passed to res.send (or similar) without "
+                "encoding, enabling reflected cross-site scripting in the response body."
+            ),
+            remediation=(
+                "Encode output for HTML context, use a templating engine with "
+                "auto-escaping, or send JSON with an appropriate Content-Type."
+            ),
+        )
+
+    def run(self, context: AnalysisContext) -> list[RawFinding]:
+        findings: list[RawFinding] = []
+        self._walk(context.root_node, context, findings)
+        return findings
+
+    def _walk(self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]) -> None:
+        if node.type == "call_expression":
+            self._check_send(node, ctx, findings)
+        for child in node.children:
+            self._walk(child, ctx, findings)
+
+    _RESPONSE_RECEIVERS = frozenset({"res", "response", "reply"})
+
+    def _check_send(self, node: Node, ctx: AnalysisContext, findings: list[RawFinding]) -> None:
+        func = node.child_by_field_name("function")
+        args = node.child_by_field_name("arguments")
+        if func is None or args is None or func.type != "member_expression":
+            return
+        obj = func.child_by_field_name("object")
+        prop = func.child_by_field_name("property")
+        if obj is None or prop is None or obj.type != "identifier":
+            return
+        if (prop.text.decode() if prop.text else "") != "send":
+            return
+        receiver = obj.text.decode() if obj.text else ""
+        if receiver not in self._RESPONSE_RECEIVERS:
+            return
+        first_arg = next((c for c in args.children if c.is_named), None)
+        if first_arg is None or first_arg.type == "string":
+            return
+        findings.append(
+            RawFinding(
+                rule_id=self.meta().rule_id,
+                line_start=node.start_point[0] + 1,
+                line_end=node.end_point[0] + 1,
+                column=node.start_point[1],
+                code_snippet=self._snippet(ctx, node.start_point[0] + 1),
+            )
+        )
+
+
 class DangerouslySetInnerHTMLRule(BaseRule):
     def meta(self) -> RuleMeta:
         return RuleMeta(

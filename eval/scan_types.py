@@ -30,7 +30,9 @@ def findings_from_analyzer_response(body: dict[str, Any]) -> list[NormalizedFind
         rid = f.get("rule_id")
         if not isinstance(rid, str):
             continue
-        line = f.get("line")
+        line = f.get("line_start")
+        if not isinstance(line, int):
+            line = f.get("line")
         ln = int(line) if isinstance(line, int) else None
         fp = f.get("file_path")
         path: str | None = fp if isinstance(fp, str) else None

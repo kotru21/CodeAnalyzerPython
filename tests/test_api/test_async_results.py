@@ -5,6 +5,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from analyzer.api.dependencies import get_redis_client
+from analyzer.config import Settings, get_settings
 from analyzer.main import create_app
 
 
@@ -80,4 +81,26 @@ class TestGetResults:
         assert resp.status_code == 200
         body = resp.json()
         assert body["status"] == "failed"
-        assert "error" in body
+        assert body["error"] == "task failed"
+
+
+class TestAsyncEnqueueLimits:
+    async def test_async_rejects_oversized_source(
+        self, client_with_redis: AsyncClient, mock_redis: MagicMock
+    ):
+        get_settings.cache_clear()
+        app = client_with_redis._transport.app  # type: ignore[attr-defined]
+        small = Settings(max_source_bytes=100)
+        app.dependency_overrides[get_settings] = lambda: small
+        try:
+            resp = await client_with_redis.post(
+                "/api/v1/analyze/async",
+                json={
+                    "source_code": "x" * 200,
+                    "file_path": "big.js",
+                },
+            )
+            assert resp.status_code == 413
+        finally:
+            app.dependency_overrides.pop(get_settings, None)
+            get_settings.cache_clear()

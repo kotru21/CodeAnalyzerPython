@@ -13,6 +13,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
+      - name: Ruff
+        run: ruff check src/analyzer
+      - name: Mypy
+        run: mypy src/analyzer
       - run: pytest tests/ -q --cov=src/analyzer --cov-report=term-missing
       - name: In-process catalog eval
         run: |
