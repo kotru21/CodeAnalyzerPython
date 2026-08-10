@@ -276,15 +276,16 @@ def build_per_file_fn_index(
     files: Mapping[str, str],
     *,
     tsconfig_paths: Mapping[str, list[str]] | None = None,
-) -> dict[str, dict[str, tuple[list[str], Node]]]:
+) -> dict[str, dict[str, tuple[list[str], Node, str | None]]]:
     """Per consumer file: local fn_index plus resolved require/import exports."""
     by_path = {ctx.file_path: ctx for ctx in contexts}
     file_indices = {
-        path: merge_fn_index_from_roots([ctx.root_node]) for path, ctx in by_path.items()
+        path: merge_fn_index_from_roots([ctx.root_node], file_path=path)
+        for path, ctx in by_path.items()
     }
     file_exports = {path: exported_bindings(ctx.root_node) for path, ctx in by_path.items()}
 
-    result: dict[str, dict[str, tuple[list[str], Node]]] = {}
+    result: dict[str, dict[str, tuple[list[str], Node, str | None]]] = {}
     for ctx in contexts:
         idx = dict(file_indices[ctx.file_path])
         for rel in parse_relative_imports(ctx.source_code):

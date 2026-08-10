@@ -82,6 +82,8 @@ class TaintFlow:
     source_line: int
     sink_line: int
     variable_chain: list[str] = field(default_factory=list)
+    # File containing the sink node; None when it is the analyzed file itself.
+    sink_file: str | None = None
 
 
 def _formal_param_identifiers(params_node: Node) -> list[str]:
@@ -112,8 +114,10 @@ def _params_from_function_node(fn_node: Node) -> list[str]:
     return []
 
 
-def _index_functions(root: Node) -> dict[str, tuple[list[str], Node]]:
-    index: dict[str, tuple[list[str], Node]] = {}
+def _index_functions(
+    root: Node, file_path: str | None = None
+) -> dict[str, tuple[list[str], Node, str | None]]:
+    index: dict[str, tuple[list[str], Node, str | None]] = {}
 
     def visit(node: Node) -> None:
         if node.type == "function_declaration":
@@ -122,7 +126,7 @@ def _index_functions(root: Node) -> dict[str, tuple[list[str], Node]]:
             if name is not None and name.type == "identifier" and body is not None:
                 nm = name.text.decode() if name.text else ""
                 if nm:
-                    index[nm] = (_params_from_function_node(node), body)
+                    index[nm] = (_params_from_function_node(node), body, file_path)
         elif node.type == "variable_declarator":
             vn = node.child_by_field_name("name")
             val = node.child_by_field_name("value")
@@ -136,7 +140,7 @@ def _index_functions(root: Node) -> dict[str, tuple[list[str], Node]]:
                 if body is not None:
                     nm = vn.text.decode() if vn.text else ""
                     if nm:
-                        index[nm] = (_params_from_function_node(val), body)
+                        index[nm] = (_params_from_function_node(val), body, file_path)
         for c in node.children:
             visit(c)
 
@@ -144,10 +148,12 @@ def _index_functions(root: Node) -> dict[str, tuple[list[str], Node]]:
     return index
 
 
-def merge_fn_index_from_roots(roots: list[Node]) -> dict[str, tuple[list[str], Node]]:
-    merged: dict[str, tuple[list[str], Node]] = {}
+def merge_fn_index_from_roots(
+    roots: list[Node], file_path: str | None = None
+) -> dict[str, tuple[list[str], Node, str | None]]:
+    merged: dict[str, tuple[list[str], Node, str | None]] = {}
     for root in roots:
-        merged.update(_index_functions(root))
+        merged.update(_index_functions(root, file_path))
     return merged
 
 
@@ -169,7 +175,7 @@ class TaintTracker:
     def analyze(
         self,
         context: AnalysisContext,
-        fn_index: dict[str, tuple[list[str], Node]] | None = None,
+        fn_index: dict[str, tuple[list[str], Node, str | None]] | None = None,
     ) -> list[TaintFlow]:
         tainted_vars: dict[str, str] = {}
         sanitized_vars: dict[str, frozenset[str]] = {}
@@ -195,7 +201,7 @@ class TaintTracker:
         sanitized: dict[str, frozenset[str]],
         flows: list[TaintFlow],
         ctx: AnalysisContext,
-        fn_index: dict[str, tuple[list[str], Node]],
+        fn_index: dict[str, tuple[list[str], Node, str | None]],
         depth: int,
     ) -> None:
         # Nested functions get a fresh scope: formals shadow outer taint.
@@ -298,8 +304,8 @@ class TaintTracker:
         call_node: Node,
         tainted: dict[str, str],
         sanitized: dict[str, frozenset[str]],
-        fn_index: dict[str, tuple[list[str], Node]],
-    ) -> tuple[str, Node, dict[str, str], dict[str, frozenset[str]]] | None:
+        fn_index: dict[str, tuple[list[str], Node, str | None]],
+    ) -> tuple[str, Node, str | None, dict[str, str], dict[str, frozenset[str]]] | None:
         func = call_node.child_by_field_name("function")
         args_node = call_node.child_by_field_name("arguments")
         if func is None:
@@ -307,7 +313,7 @@ class TaintTracker:
         fname = _interproc_callee_name(func)
         if not fname or fname not in fn_index:
             return None
-        params, body = fn_index[fname]
+        params, body, callee_file = fn_index[fname]
         arg_nodes = _positional_arguments(args_node)
         bindings: dict[str, str] = {}
         san_child: dict[str, frozenset[str]] = {}
@@ -327,7 +333,7 @@ class TaintTracker:
             src = self._find_tainted_in_arg(arg, tainted, sanitized)
             if src:
                 bindings[pname] = src
-        return fname, body, bindings, san_child
+        return fname, body, callee_file, bindings, san_child
 
     def _analyze_callee_interproc(
         self,
@@ -336,7 +342,7 @@ class TaintTracker:
         sanitized: dict[str, frozenset[str]],
         flows: list[TaintFlow],
         ctx: AnalysisContext,
-        fn_index: dict[str, tuple[list[str], Node]],
+        fn_index: dict[str, tuple[list[str], Node, str | None]],
         depth: int,
         *,
         require_bindings: bool = True,
@@ -347,7 +353,7 @@ class TaintTracker:
         resolved = self._bindings_for_call(node, tainted, sanitized, fn_index)
         if resolved is None:
             return None
-        fname, body, bindings, san_child = resolved
+        fname, body, callee_file, bindings, san_child = resolved
         if require_bindings and not bindings:
             return None
         sig = tuple(sorted(bindings.items()))
@@ -356,7 +362,13 @@ class TaintTracker:
             return self._return_expression_taint(body, dict(bindings), san_child)
         self._interproc_cache.add(cache_key)
         # Do not inherit ambient outer taint into the callee.
+        flows_before = len(flows)
         self._collect_taint_info(body, dict(bindings), san_child, flows, ctx, fn_index, depth + 1)
+        if callee_file is not None:
+            # Sinks found inside an imported callee belong to the callee's file.
+            for flow in flows[flows_before:]:
+                if flow.sink_file is None:
+                    flow.sink_file = callee_file
         return self._return_expression_taint(body, dict(bindings), san_child)
 
     def _interproc_call_return_source(
@@ -366,7 +378,7 @@ class TaintTracker:
         sanitized: dict[str, frozenset[str]],
         flows: list[TaintFlow],
         ctx: AnalysisContext,
-        fn_index: dict[str, tuple[list[str], Node]],
+        fn_index: dict[str, tuple[list[str], Node, str | None]],
         depth: int,
     ) -> str | None:
         return self._analyze_callee_interproc(
@@ -425,7 +437,7 @@ class TaintTracker:
         sanitized: dict[str, frozenset[str]],
         flows: list[TaintFlow],
         ctx: AnalysisContext,
-        fn_index: dict[str, tuple[list[str], Node]],
+        fn_index: dict[str, tuple[list[str], Node, str | None]],
         depth: int,
     ) -> None:
         name_node = node.child_by_field_name("name")
@@ -472,7 +484,7 @@ class TaintTracker:
         sanitized: dict[str, frozenset[str]],
         flows: list[TaintFlow],
         ctx: AnalysisContext,
-        fn_index: dict[str, tuple[list[str], Node]],
+        fn_index: dict[str, tuple[list[str], Node, str | None]],
         depth: int,
     ) -> None:
         left = node.child_by_field_name("left")

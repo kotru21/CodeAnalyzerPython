@@ -6,6 +6,7 @@ import redis
 from celery.result import AsyncResult
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import OperationalError
 
 from analyzer.api.dependencies import get_orchestrator, get_redis_client, require_api_key
 from analyzer.api.rate_limit import rate_limit_analyze
@@ -46,6 +47,11 @@ def _persist_response(result: AnalyzeResponse) -> None:
     session = factory()
     try:
         save_analyze_response(session, result)
+    except OperationalError as e:
+        # DB down/unreachable: one concise line, not a per-request traceback.
+        detail = str(e.orig).splitlines()[0] if e.orig else type(e).__name__
+        _logger.warning("failed to persist scan %s: %s", result.scan_id, detail)
+        session.rollback()
     except Exception:  # noqa: BLE001
         _logger.exception("failed to persist scan %s", result.scan_id)
         session.rollback()

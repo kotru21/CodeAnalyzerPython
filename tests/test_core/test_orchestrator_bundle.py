@@ -34,7 +34,35 @@ app.get('/x', (req, res) => {
     sql_findings = [f for f in resp.findings if f.rule_id == "JS-SQL-001"]
     assert sql_findings, "expected SQL taint via import-resolved fn_index + return taint"
     paths = {f.file_path for f in sql_findings}
-    assert "app/routes.js" in paths
+    assert "lib/helpers.js" in paths
+    assert "app/routes.js" not in paths
+
+
+def test_bundle_cross_file_taint_reports_sink_location() -> None:
+    """Sink inside a required module must be attributed to that module's file/line."""
+    lib = """function runQuery(q) {
+  db.query(q);
+}
+module.exports = { runQuery };
+"""
+    app = """const db = require('./lib/db');
+app.get('/q', (req, res) => {
+  db.runQuery(req.body);
+});
+"""
+    orch = Orchestrator(settings=Settings(), cwe_db=None)
+    resp = orch.analyze_bundle_sync(
+        AnalyzeBundleRequest(
+            files={"app.js": app, "lib/db.js": lib},
+            config=ScanConfig(enable_taint=True),
+        )
+    )
+    sql_findings = [f for f in resp.findings if f.rule_id == "JS-SQL-001"]
+    assert sql_findings, "expected cross-file SQL taint finding"
+    sink = sql_findings[0]
+    assert sink.file_path == "lib/db.js"
+    assert sink.line_start == 2
+    assert sink.code_snippet.strip() == "db.query(q);"
 
 
 def test_bundle_same_name_functions_do_not_collide() -> None:

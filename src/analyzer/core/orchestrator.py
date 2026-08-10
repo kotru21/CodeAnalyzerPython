@@ -316,7 +316,7 @@ class Orchestrator:
                         line_start=flow.sink_line,
                         line_end=flow.sink_line,
                         extra_info=f"taint: {flow.source} → {flow.sink_method}",
-                        file_path=file_path,
+                        file_path=flow.sink_file or file_path,
                         taint_confirmed=True,
                     )
                 )

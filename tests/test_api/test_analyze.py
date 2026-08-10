@@ -1,6 +1,10 @@
+import logging
+
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.exc import OperationalError
 
+import analyzer.api.router as router_mod
 from analyzer.main import app
 
 
@@ -112,3 +116,28 @@ app.get('/run', (req, res) => {
         assert "application/sarif+json" in resp.headers.get("content-type", "")
         body = resp.json()
         assert body["version"] == "2.1.0"
+
+    async def test_sync_ok_when_db_unavailable_logs_single_warning(
+        self, client: AsyncClient, monkeypatch: pytest.MonkeyPatch, caplog
+    ):
+        def _raise_connection_error(session, result):  # noqa: ANN001, ANN202
+            raise OperationalError("INSERT", {}, Exception("connection refused"))
+
+        monkeypatch.setattr(router_mod, "save_analyze_response", _raise_connection_error)
+        # Alembic's smoke test reconfigures logging via fileConfig, which disables
+        # pre-existing loggers; re-enable so the test is order-independent.
+        monkeypatch.setattr(logging.getLogger("analyzer.api.router"), "disabled", False)
+        with caplog.at_level(logging.WARNING, logger="analyzer.api.router"):
+            resp = await client.post(
+                "/api/v1/analyze/sync",
+                json={
+                    "source_code": "const x = 1 + 2;\nconsole.log(x);\n",
+                    "file_path": "safe.js",
+                },
+            )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "completed"
+        persist_logs = [r for r in caplog.records if "failed to persist scan" in r.message]
+        assert len(persist_logs) == 1
+        assert persist_logs[0].levelno == logging.WARNING
+        assert persist_logs[0].exc_info is None
