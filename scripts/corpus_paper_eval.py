@@ -36,9 +36,7 @@ def _agreement_fn_count(summary: dict) -> int | None:
 
 def main() -> int:
     root = repo_root()
-    p = argparse.ArgumentParser(
-        description="Paper eval: JS/TS corpus vs Semgrep line agreement"
-    )
+    p = argparse.ArgumentParser(description="Paper eval: JS/TS corpus vs Semgrep line agreement")
     p.add_argument("--corpus", type=Path, required=True, help="Corpus root directory")
     p.add_argument(
         "--semgrep-config",

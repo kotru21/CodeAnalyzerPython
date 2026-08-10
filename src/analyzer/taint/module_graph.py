@@ -108,9 +108,7 @@ def _esm_import_bindings(node: Node, specifier: str) -> list[ImportBinding]:
             if local:
                 bindings.append(ImportBinding(specifier, local, "default"))
         elif child.type == "namespace_import":
-            local_node = next(
-                (part for part in child.children if part.type == "identifier"), None
-            )
+            local_node = next((part for part in child.children if part.type == "identifier"), None)
             local = _ident_text(local_node)
             if local:
                 bindings.append(ImportBinding(specifier, local, "*", namespace=True))

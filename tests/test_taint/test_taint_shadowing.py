@@ -82,18 +82,14 @@ def test_sync_and_bundle_agree_on_same_file() -> None:
 def test_importer_uses_export_assignment_not_same_named_local() -> None:
     files = {
         "db.js": (
-            "function helper(x) { return x; } "
-            "module.exports.helper = function(x) { db.query(x); };"
+            "function helper(x) { return x; } module.exports.helper = function(x) { db.query(x); };"
         ),
         "app.js": (
-            "const { helper } = require('./db'); "
-            "app.get('/x', (req, res) => helper(req.query.x));"
+            "const { helper } = require('./db'); app.get('/x', (req, res) => helper(req.query.x));"
         ),
     }
     response = Orchestrator(Settings()).analyze_bundle_sync(
         AnalyzeBundleRequest(files=files, config=ScanConfig(enable_taint=True))
     )
 
-    assert any(
-        f.rule_id == "JS-SQL-001" and f.file_path == "db.js" for f in response.findings
-    )
+    assert any(f.rule_id == "JS-SQL-001" and f.file_path == "db.js" for f in response.findings)

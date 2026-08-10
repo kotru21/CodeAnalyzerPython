@@ -321,9 +321,7 @@ class Orchestrator:
         return set(request.config.rule_ids)
 
     @staticmethod
-    def _filter_rule_ids(
-        findings: list[RawFinding], allowed: set[str] | None
-    ) -> list[RawFinding]:
+    def _filter_rule_ids(findings: list[RawFinding], allowed: set[str] | None) -> list[RawFinding]:
         if allowed is None:
             return findings
         return [f for f in findings if f.rule_id in allowed]
@@ -444,9 +442,8 @@ class Orchestrator:
 
             fp = rf.file_path if rf.file_path else (default_ctx.file_path if default_ctx else "")
             ctx = contexts.get(fp) or default_ctx
-            snippet = (
-                rf.code_snippet
-                or (self._get_snippet(ctx, rf.line_start) if ctx is not None else "")
+            snippet = rf.code_snippet or (
+                self._get_snippet(ctx, rf.line_start) if ctx is not None else ""
             )
 
             confidence = meta.confidence
