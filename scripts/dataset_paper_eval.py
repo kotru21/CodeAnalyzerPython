@@ -67,7 +67,11 @@ def main() -> int:
         type=Path,
         default=Path("eval/results/dataset_eval_summary.json"),
     )
-    p.add_argument("--dataset-id", default="", help="Identifier for summary JSON (default: CSV stem)")
+    p.add_argument(
+        "--dataset-id",
+        default="",
+        help="Identifier for summary JSON (default: CSV stem)",
+    )
     p.add_argument(
         "--dataset-snapshot-hash",
         default="",

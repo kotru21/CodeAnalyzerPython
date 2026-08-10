@@ -26,23 +26,41 @@ app.post('/up', (req, res) => {
         flows = TaintTracker().analyze(make_js_context(code))
         assert_any_flow(flows, sink_method="readFileSync", source_substr="req.file")
 
-    def test_prisma__positive__query_raw_template(self) -> None:
+    def test_prisma__negative__parameterized_query_raw_template(self) -> None:
         code = """
 app.get('/x', (req, res) => {
     prisma.$queryRaw`SELECT * FROM u WHERE id = ${req.body.id}`;
 });
 """
         flows = TaintTracker().analyze(make_js_context(code))
-        assert_any_flow(flows, sink_method="$queryRaw", source_substr="req.body")
+        assert_no_flow_with_sink(flows, "$queryRaw")
 
-    def test_prisma__positive__execute_raw_template(self) -> None:
+    def test_prisma__negative__parameterized_execute_raw_template(self) -> None:
         code = """
 app.get('/x', (req, res) => {
     prisma.$executeRaw`DELETE FROM t WHERE x = ${req.query.x}`;
 });
 """
         flows = TaintTracker().analyze(make_js_context(code))
-        assert_any_flow(flows, sink_method="$executeRaw", source_substr="req.query")
+        assert_no_flow_with_sink(flows, "$executeRaw")
+
+    def test_prisma__positive__query_raw_unsafe_concat(self) -> None:
+        code = """
+app.get('/x', (req, res) => {
+    prisma.$queryRawUnsafe("SELECT * FROM u WHERE id = " + req.body.id);
+});
+"""
+        flows = TaintTracker().analyze(make_js_context(code))
+        assert_any_flow(flows, sink_method="$queryRawUnsafe", source_substr="req.body")
+
+    def test_prisma__positive__execute_raw_unsafe_concat(self) -> None:
+        code = """
+app.get('/x', (req, res) => {
+    prisma.$executeRawUnsafe("DELETE FROM t WHERE x = " + req.query.x);
+});
+"""
+        flows = TaintTracker().analyze(make_js_context(code))
+        assert_any_flow(flows, sink_method="$executeRawUnsafe", source_substr="req.query")
 
     def test_prisma__negative__static_query_raw(self) -> None:
         code = """

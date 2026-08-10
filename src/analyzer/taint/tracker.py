@@ -20,6 +20,7 @@ from analyzer.taint.sources_sinks import (
     SINK_MEMBER_PATTERNS,
     SQL_RECEIVER_ALLOWLIST,
     SQL_SINK_METHOD_NAMES,
+    TIMER_STRING_ARG_SINKS,
     is_weak_source,
 )
 
@@ -51,21 +52,39 @@ def _normalize_optional_access(text: str) -> str:
     return text.replace("?.", ".")
 
 
+def _member_key_text(node: Node | None) -> str | None:
+    """Key text for member/subscript/object keys; string literals are unquoted."""
+    if node is None:
+        return None
+    if node.type == "string":
+        raw = node.text.decode() if node.text else ""
+        text = raw.strip("'\"")
+        return text or None
+    if node.type in ("identifier", "property_identifier"):
+        t = node.text.decode() if node.text else ""
+        return t or None
+    return None
+
+
 def _interproc_callee_name(func: Node) -> str | None:
     if func.type == "identifier":
         t = func.text.decode() if func.text else ""
         return t or None
     if func.type == "member_expression":
-        prop = func.child_by_field_name("property")
-        if prop is None:
-            return None
-        t = prop.text.decode() if prop.text else ""
-        return t or None
+        text = func.text.decode() if func.text else ""
+        return _normalize_optional_access(text) or None
+    if func.type == "subscript_expression":
+        # db['run-query'] — only string-literal keys are statically resolvable.
+        obj = func.child_by_field_name("object")
+        key = _member_key_text(func.child_by_field_name("index"))
+        obj_text = obj.text.decode() if obj is not None and obj.text else ""
+        return f"{obj_text}.{key}" if obj_text and key else None
     return None
 
 
 # db.query('... $1 ...', values): taint only in values is binding, not SQLi text.
 _SQL_PLACEHOLDER_MULTIARG_METHODS: frozenset[str] = frozenset({"query"})
+_PRISMA_PARAMETERIZED_TAGS: frozenset[str] = frozenset({"$queryRaw", "$executeRaw"})
 
 
 def _string_literal_text(node: Node) -> str | None:
@@ -147,6 +166,8 @@ def _index_exports_object(
     obj: Node,
     index: dict[str, tuple[list[str], Node, str | None]],
     file_path: str | None,
+    *,
+    namespace: str | None = None,
 ) -> None:
     """Index `module.exports = { foo() {}, bar: function() {}, baz: () => {} }` members."""
     for child in obj.children:
@@ -158,13 +179,17 @@ def _index_exports_object(
         elif child.type == "pair":
             value = child.child_by_field_name("value")
             if value is not None and value.type in ("arrow_function", "function_expression"):
-                name = _identifier_text(child.child_by_field_name("key"))
+                name = _member_key_text(child.child_by_field_name("key"))
                 fn_node = value
         if name is None or fn_node is None:
             continue
         body = fn_node.child_by_field_name("body")
+        # setdefault: export-object members never shadow a local definition.
         if body is not None:
-            index[name] = (_params_from_function_node(fn_node), body, file_path)
+            entry = (_params_from_function_node(fn_node), body, file_path)
+            index.setdefault(name, entry)
+            if namespace:
+                index.setdefault(f"{namespace}.{name}", entry)
 
 
 def _index_export_assignment(
@@ -179,10 +204,15 @@ def _index_export_assignment(
     if right.type in ("arrow_function", "function_expression"):
         name = export_assignment_name(left)
         body = right.child_by_field_name("body")
+        # setdefault: an export assignment must not shadow a local definition.
         if name and body is not None:
-            index[name] = (_params_from_function_node(right), body, file_path)
-    elif right.type == "object" and is_module_exports_member(left):
-        _index_exports_object(right, index, file_path)
+            index.setdefault(name, (_params_from_function_node(right), body, file_path))
+    elif right.type == "object" and (
+        is_module_exports_member(left) or export_assignment_name(left) is not None
+    ):
+        # module.exports = {...} and nested exports.ns = {...} / module.exports.ns = {...}
+        namespace = None if is_module_exports_member(left) else export_assignment_name(left)
+        _index_exports_object(right, index, file_path, namespace=namespace)
 
 
 def _index_functions(
@@ -231,6 +261,22 @@ def merge_fn_index_from_roots(
     for root in roots:
         merged.update(_index_functions(root, file_path, include_exports=True))
     return merged
+
+
+def index_direct_export_functions(
+    root: Node, file_path: str | None = None
+) -> dict[str, tuple[list[str], Node, str | None]]:
+    """Index anonymous/direct CommonJS export bodies without local-name shadowing."""
+    index: dict[str, tuple[list[str], Node, str | None]] = {}
+
+    def visit(node: Node) -> None:
+        if node.type == "assignment_expression":
+            _index_export_assignment(node, index, file_path)
+        for child in node.children:
+            visit(child)
+
+    visit(root)
+    return index
 
 
 def _positional_arguments(args_node: Node | None) -> list[Node]:
@@ -328,6 +374,9 @@ class TaintTracker:
         elif node.type == "call_expression":
             self._check_sink(node, tainted, sanitized, flows, ctx)
             self._analyze_callee_interproc(node, tainted, sanitized, flows, ctx, fn_index, depth)
+        elif node.type == "new_expression":
+            # new Function(...) — constructor call, no interproc resolution.
+            self._check_sink(node, tainted, sanitized, flows, ctx)
 
         for child in node.children:
             self._collect_taint_info(child, tainted, sanitized, flows, ctx, fn_index, depth)
@@ -387,6 +436,13 @@ class TaintTracker:
         if func is None:
             return None
         fname = _interproc_callee_name(func)
+        if fname not in fn_index and func.type in ("member_expression", "subscript_expression"):
+            fallback = _member_key_text(
+                func.child_by_field_name(
+                    "property" if func.type == "member_expression" else "index"
+                )
+            )
+            fname = fallback if fallback in fn_index else fname
         if not fname or fname not in fn_index:
             return None
         params, body, callee_file = fn_index[fname]
@@ -706,6 +762,9 @@ class TaintTracker:
         ctx: AnalysisContext,
     ) -> None:
         func = node.child_by_field_name("function")
+        if func is None:
+            # new_expression carries its callee under the "constructor" field.
+            func = node.child_by_field_name("constructor")
         args = node.child_by_field_name("arguments")
         if func is None or args is None:
             return
@@ -714,7 +773,12 @@ class TaintTracker:
         if not self._is_known_sink(func, method):
             return
 
+        if method in _PRISMA_PARAMETERIZED_TAGS and args.type == "template_string":
+            return
+
         pos_args = _positional_arguments(args)
+        if method in TIMER_STRING_ARG_SINKS:
+            pos_args = pos_args[:1]
         if len(pos_args) >= 2 and method in _SQL_PLACEHOLDER_MULTIARG_METHODS:
             first = pos_args[0]
             taint_in_first = self._find_tainted_in_arg(first, tainted, sanitized, method)

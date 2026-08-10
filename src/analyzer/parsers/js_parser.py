@@ -1,6 +1,8 @@
 import tree_sitter_javascript as tsjs
 from tree_sitter import Language, Parser, Tree
 
+from analyzer.utils.text import encode_utf8_safe
+
 JS_LANGUAGE = Language(tsjs.language())
 
 
@@ -9,7 +11,7 @@ class JavaScriptParser:
         self._parser = Parser(JS_LANGUAGE)
 
     def parse(self, source_code: str) -> Tree:
-        return self._parser.parse(source_code.encode("utf-8"))
+        return self._parser.parse(encode_utf8_safe(source_code))
 
     @property
     def language_name(self) -> str:

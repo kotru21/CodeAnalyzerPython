@@ -4,7 +4,16 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from analyzer.core.language_detect import SUPPORTED_LANGUAGES
 from analyzer.core.severity import Confidence, Severity
+from analyzer.utils.text import sanitize_lone_surrogates
+
+
+def _validate_language(v: str | None) -> str | None:
+    if v is not None and v not in SUPPORTED_LANGUAGES:
+        msg = f"unsupported language: {v!r} (supported: {sorted(SUPPORTED_LANGUAGES)})"
+        raise ValueError(msg)
+    return v
 
 
 class ScanConfig(BaseModel):
@@ -27,6 +36,19 @@ class AnalyzeRequest(BaseModel):
     )
     response_format: Literal["json", "sarif"] = "json"
 
+    @field_validator("source_code", "file_path", mode="before")
+    @classmethod
+    def _sanitize_text(cls, v: object) -> object:
+        # mode="before": core str validation rejects lone surrogates outright.
+        if isinstance(v, str):
+            return sanitize_lone_surrogates(v)
+        return v
+
+    @field_validator("language")
+    @classmethod
+    def _check_language(cls, v: str | None) -> str | None:
+        return _validate_language(v)
+
 
 class AnalyzeBundleRequest(BaseModel):
     """Multi-file scan: per-file fn index + relative imports; rules run per file."""
@@ -47,6 +69,28 @@ class AnalyzeBundleRequest(BaseModel):
         description="Optional TS path aliases, e.g. {'@app/*': ['src/*']}",
     )
 
+    @field_validator("files", mode="before")
+    @classmethod
+    def _sanitize_files(cls, v: object) -> object:
+        if not isinstance(v, dict):
+            return v
+        sanitized: dict[object, object] = {}
+        original_paths: dict[object, object] = {}
+        for original_path, source in v.items():
+            path = (
+                sanitize_lone_surrogates(original_path)
+                if isinstance(original_path, str)
+                else original_path
+            )
+            if path in original_paths and original_paths[path] != original_path:
+                msg = f"bundle paths collide after sanitization: {path!r}"
+                raise ValueError(msg)
+            original_paths[path] = original_path
+            sanitized[path] = (
+                sanitize_lone_surrogates(source) if isinstance(source, str) else source
+            )
+        return sanitized
+
     @field_validator("files")
     @classmethod
     def nonempty_files(cls, v: dict[str, str]) -> dict[str, str]:
@@ -54,6 +98,11 @@ class AnalyzeBundleRequest(BaseModel):
             msg = "files must contain at least one entry"
             raise ValueError(msg)
         return v
+
+    @field_validator("language")
+    @classmethod
+    def _check_language(cls, v: str | None) -> str | None:
+        return _validate_language(v)
 
 
 class FindingLocation(BaseModel):
@@ -100,6 +149,7 @@ class AnalyzeResponse(BaseModel):
     findings: list[Finding]
     created_at: datetime
     failed_rules: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class AsyncAnalyzeResponse(BaseModel):

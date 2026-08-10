@@ -1,9 +1,7 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
 from alembic import context
+from sqlalchemy import engine_from_config, pool
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -14,10 +12,11 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-from analyzer.config import get_settings
-from analyzer.models.base import Base
-from analyzer.models.finding import FindingModel  # noqa: F401
-from analyzer.models.scan import Scan  # noqa: F401
+# App imports must stay below fileConfig (logging is configured first).  # noqa: E402
+from analyzer.config import get_settings  # noqa: E402
+from analyzer.models.base import Base  # noqa: E402
+from analyzer.models.finding import FindingModel  # noqa: F401,E402
+from analyzer.models.scan import Scan  # noqa: F401,E402
 
 target_metadata = Base.metadata
 

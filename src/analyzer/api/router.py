@@ -35,6 +35,7 @@ from analyzer.services.scan_repository import (
 from analyzer.services.scan_source_store import store_scan_source
 from analyzer.services.scan_task_registry import register_scan_task
 from analyzer.utils.hash import md5_fingerprint
+from analyzer.utils.text import encode_utf8_safe
 from analyzer.workers.tasks import celery_app, run_async_scan
 
 _logger = logging.getLogger(__name__)
@@ -66,7 +67,7 @@ def analyze_sync(
     settings: Annotated[Settings, Depends(get_settings)],
     _: Annotated[None, Depends(rate_limit_analyze)],
 ) -> AnalyzeResponse | JSONResponse:
-    if len(request.source_code.encode()) > settings.max_sync_source_bytes:
+    if len(encode_utf8_safe(request.source_code)) > settings.max_sync_source_bytes:
         raise HTTPException(
             status_code=413,
             detail=(
@@ -106,7 +107,7 @@ def analyze_bundle_sync(
                 "Reduce the number of entries or raise ANALYZER_MAX_BUNDLE_FILES."
             ),
         )
-    total_bytes = sum(len(s.encode("utf-8")) for s in request.files.values())
+    total_bytes = sum(len(encode_utf8_safe(s)) for s in request.files.values())
     if total_bytes > settings.max_bundle_total_bytes:
         raise HTTPException(
             status_code=413,
@@ -159,7 +160,7 @@ def analyze_async(
     redis_client: Annotated[redis.Redis, Depends(get_redis_client)],
     _: Annotated[None, Depends(rate_limit_analyze)],
 ) -> AsyncAnalyzeResponse:
-    if len(request.source_code.encode()) > settings.max_source_bytes:
+    if len(encode_utf8_safe(request.source_code)) > settings.max_source_bytes:
         raise HTTPException(
             status_code=413,
             detail=(

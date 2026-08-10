@@ -69,13 +69,21 @@ SQL_SINKS: list[TaintSink] = [
     TaintSink("knex.raw", "sql", "Knex raw query"),
     TaintSink("prisma.$queryRaw", "sql", "Prisma raw query (tagged template / call)"),
     TaintSink("prisma.$executeRaw", "sql", "Prisma raw execute"),
+    TaintSink("prisma.$queryRawUnsafe", "sql", "Prisma unsafe raw query"),
+    TaintSink("prisma.$executeRawUnsafe", "sql", "Prisma unsafe raw execute"),
 ]
 
 COMMAND_SINKS: list[TaintSink] = [
     TaintSink("exec", "command", "OS command execution"),
     TaintSink("execSync", "command", "Synchronous OS command"),
     TaintSink("eval", "command", "Dynamic code evaluation"),
+    TaintSink("Function", "command", "Function constructor (dynamic code evaluation)"),
+    TaintSink("setTimeout", "command", "setTimeout with string callback (code evaluation)"),
+    TaintSink("setInterval", "command", "setInterval with string callback (code evaluation)"),
 ]
+
+# Only the first arg of timer sinks is evaluated as code; later args are delay/options.
+TIMER_STRING_ARG_SINKS: frozenset[str] = frozenset({"setTimeout", "setInterval"})
 
 XSS_SINKS: list[TaintSink] = [
     TaintSink("innerHTML", "xss", "DOM innerHTML assignment"),

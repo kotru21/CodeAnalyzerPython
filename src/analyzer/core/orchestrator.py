@@ -25,12 +25,15 @@ from analyzer.taint.module_graph import build_per_file_fn_index
 from analyzer.taint.sanitizers import SINK_CATEGORY_BY_METHOD
 from analyzer.taint.tracker import TaintFlow, TaintTracker
 from analyzer.utils.hash import md5_fingerprint
+from analyzer.utils.text import sanitize_lone_surrogates
 
 # sink_method (tracker) → rule_id for taint-confirmed findings
 _FLOW_RULE_MAP: dict[str, str] = {
     "query": "JS-SQL-001",
     "$queryRaw": "JS-SQL-001",
     "$executeRaw": "JS-SQL-001",
+    "$queryRawUnsafe": "JS-SQL-001",
+    "$executeRawUnsafe": "JS-SQL-001",
     "raw": "JS-SQL-001",
     "execute": "JS-SQL-001",
     "exec": "JS-CMD-001",
@@ -92,14 +95,14 @@ class Orchestrator:
         parse_cache = ScanParseCache()
         context = self._make_context(
             request.file_path,
-            request.source_code,
+            sanitize_lone_surrogates(request.source_code),
             language,
             parse_cache,
         )
 
         rules = get_rules_for_language(language)
-        if request.config.rule_ids:
-            allowed = set(request.config.rule_ids)
+        allowed = self._allowed_rule_ids(request)
+        if allowed is not None:
             rules = [r for r in rules if r.meta().rule_id in allowed]
 
         raw_findings, failed_rules = self._run_rules(rules, context, deadline)
@@ -110,7 +113,8 @@ class Orchestrator:
         taint_ran = False
         if request.config.enable_taint and not time_budget_exceeded:
             taint_flows = self._taint_tracker.analyze(context)
-            raw_findings.extend(self._taint_to_findings(taint_flows, file_path=context.file_path))
+            taint_findings = self._taint_to_findings(taint_flows, file_path=context.file_path)
+            raw_findings.extend(self._filter_rule_ids(taint_findings, allowed))
             taint_ran = True
 
         raw_findings = self._deduplicate(raw_findings)
@@ -222,23 +226,36 @@ class Orchestrator:
         if budget_ms is not None and budget_ms > 0:
             deadline = start + budget_ms / 1000.0
 
-        paths = sorted(request.files.keys())
+        if not request.files:
+            msg = "files must contain at least one entry"
+            raise ValueError(msg)
+
+        files = {rel: sanitize_lone_surrogates(src) for rel, src in request.files.items()}
+        warnings: list[str] = []
         parse_cache = ScanParseCache()
         contexts: list[AnalysisContext] = []
-        for rel in paths:
-            src = request.files[rel]
-            lang = request.language or detect_language(rel)
-            contexts.append(self._make_context(rel, src, lang, parse_cache))
+        for rel in sorted(files.keys()):
+            try:
+                lang = request.language or detect_language(rel)
+            except ValueError as e:
+                # Unsupported sibling (helper.py, cfg.json, …): skip analysis of
+                # this file only; it stays in `files` for taint module resolution.
+                warnings.append(f"skipped {rel}: {e}")
+                continue
+            contexts.append(self._make_context(rel, files[rel], lang, parse_cache))
+
+        if not contexts:
+            raise ValueError("bundle contains no analyzable files")
 
         primary_lang = contexts[0].language if contexts else "javascript"
         rules = get_rules_for_language(primary_lang)
-        if request.config.rule_ids:
-            allowed = set(request.config.rule_ids)
+        allowed = self._allowed_rule_ids(request)
+        if allowed is not None:
             rules = [r for r in rules if r.meta().rule_id in allowed]
 
         per_file_fn_index = build_per_file_fn_index(
             contexts,
-            request.files,
+            files,
             tsconfig_paths=request.tsconfig_paths,
         )
         raw_findings: list[RawFinding] = []
@@ -262,7 +279,8 @@ class Orchestrator:
                     time_budget_exceeded = True
                     break
                 flows = self._taint_tracker.analyze(ctx, fn_index=per_file_fn_index[ctx.file_path])
-                raw_findings.extend(self._taint_to_findings(flows, file_path=ctx.file_path))
+                taint_findings = self._taint_to_findings(flows, file_path=ctx.file_path)
+                raw_findings.extend(self._filter_rule_ids(taint_findings, allowed))
                 taint_ran = True
 
         raw_findings = self._deduplicate(raw_findings)
@@ -274,7 +292,7 @@ class Orchestrator:
         findings = self._enrich_findings(raw_findings, rules, ctx_map)
 
         elapsed_ms = int((time.monotonic() - start) * 1000)
-        primary_ctx = contexts[0]
+        primary_ctx = contexts[0] if contexts else None
         stats = self._compute_stats(
             findings,
             primary_ctx,
@@ -293,7 +311,22 @@ class Orchestrator:
             findings=findings,
             created_at=datetime.now(UTC),
             failed_rules=list(dict.fromkeys(failed_rules)),
+            warnings=warnings,
         )
+
+    @staticmethod
+    def _allowed_rule_ids(request: AnalyzeRequest | AnalyzeBundleRequest) -> set[str] | None:
+        if not request.config.rule_ids:
+            return None
+        return set(request.config.rule_ids)
+
+    @staticmethod
+    def _filter_rule_ids(
+        findings: list[RawFinding], allowed: set[str] | None
+    ) -> list[RawFinding]:
+        if allowed is None:
+            return findings
+        return [f for f in findings if f.rule_id in allowed]
 
     @staticmethod
     def _drop_untainted_ssrf(findings: list[RawFinding]) -> list[RawFinding]:
@@ -389,7 +422,7 @@ class Orchestrator:
 
         rule_map = {r.meta().rule_id: r for r in get_all_rules()}
         enriched: list[Finding] = []
-        default_ctx = next(iter(contexts.values()))
+        default_ctx = next(iter(contexts.values()), None)
 
         for rf in raw_findings:
             rule = rule_map.get(rf.rule_id)
@@ -409,9 +442,12 @@ class Orchestrator:
                     if cwe_entry.mitigations:
                         remediation = meta.remediation + " | " + cwe_entry.mitigations[0]
 
-            fp = rf.file_path if rf.file_path else default_ctx.file_path
+            fp = rf.file_path if rf.file_path else (default_ctx.file_path if default_ctx else "")
             ctx = contexts.get(fp) or default_ctx
-            snippet = rf.code_snippet or self._get_snippet(ctx, rf.line_start)
+            snippet = (
+                rf.code_snippet
+                or (self._get_snippet(ctx, rf.line_start) if ctx is not None else "")
+            )
 
             confidence = meta.confidence
             if rf.taint_confirmed:
@@ -448,7 +484,7 @@ class Orchestrator:
     @staticmethod
     def _compute_stats(
         findings: list[Finding],
-        ctx: AnalysisContext,
+        ctx: AnalysisContext | None,
         elapsed_ms: int,
         *,
         time_budget_exceeded: bool = False,
@@ -458,6 +494,12 @@ class Orchestrator:
         counts: dict[Severity, int] = {s: 0 for s in Severity}
         for f in findings:
             counts[f.severity] = counts.get(f.severity, 0) + 1
+        if lines_scanned is not None:
+            total_lines = lines_scanned
+        elif ctx is not None:
+            total_lines = len(ctx.lines)
+        else:
+            total_lines = 0
         return ScanStats(
             total_findings=len(findings),
             critical=counts.get(Severity.CRITICAL, 0),
@@ -466,7 +508,7 @@ class Orchestrator:
             low=counts.get(Severity.LOW, 0),
             info=counts.get(Severity.INFO, 0),
             files_scanned=files_scanned if files_scanned is not None else 1,
-            lines_scanned=(lines_scanned if lines_scanned is not None else len(ctx.lines)),
+            lines_scanned=total_lines,
             scan_duration_ms=elapsed_ms,
             time_budget_exceeded=time_budget_exceeded,
         )
