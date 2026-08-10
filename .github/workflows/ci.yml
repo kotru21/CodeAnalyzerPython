@@ -91,7 +91,7 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v7
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
       - name: Docker smoke
         env:
           IMAGE: analyzer-ci:local
