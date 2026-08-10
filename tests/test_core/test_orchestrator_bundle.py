@@ -65,6 +65,92 @@ app.get('/q', (req, res) => {
     assert sink.code_snippet.strip() == "db.query(q);"
 
 
+def test_bundle_exports_property_function_cross_file_taint() -> None:
+    """exports.foo = function(...) {...} must resolve cross-file to the sink."""
+    lib = """exports.runQuery = function(q) {
+  db.query(q);
+};
+"""
+    app = """const db = require('./lib/db');
+app.get('/q', (req, res) => {
+  db.runQuery(req.body);
+});
+"""
+    orch = Orchestrator(settings=Settings(), cwe_db=None)
+    resp = orch.analyze_bundle_sync(
+        AnalyzeBundleRequest(
+            files={"app.js": app, "lib/db.js": lib},
+            config=ScanConfig(enable_taint=True),
+        )
+    )
+    sql_findings = [f for f in resp.findings if f.rule_id == "JS-SQL-001"]
+    assert sql_findings, "expected cross-file SQL taint via exports.foo = function"
+    sink = sql_findings[0]
+    assert sink.file_path == "lib/db.js"
+    assert sink.line_start == 2
+    assert sink.code_snippet.strip() == "db.query(q);"
+
+
+def test_bundle_module_exports_property_arrow_cross_file_taint() -> None:
+    """module.exports.foo = (...) => {...} must resolve cross-file to the sink."""
+    lib = """module.exports.runQuery = (q) => {
+  db.query(q);
+};
+"""
+    app = """const db = require('./lib/db');
+app.get('/q', (req, res) => {
+  db.runQuery(req.body);
+});
+"""
+    orch = Orchestrator(settings=Settings(), cwe_db=None)
+    resp = orch.analyze_bundle_sync(
+        AnalyzeBundleRequest(
+            files={"app.js": app, "lib/db.js": lib},
+            config=ScanConfig(enable_taint=True),
+        )
+    )
+    sql_findings = [f for f in resp.findings if f.rule_id == "JS-SQL-001"]
+    assert sql_findings, "expected cross-file SQL taint via module.exports.foo = arrow"
+    sink = sql_findings[0]
+    assert sink.file_path == "lib/db.js"
+    assert sink.line_start == 2
+    assert sink.code_snippet.strip() == "db.query(q);"
+
+
+def test_bundle_module_exports_object_literal_cross_file_taint() -> None:
+    """module.exports = { method, prop: function, prop: arrow } all resolve."""
+    lib = """module.exports = {
+  runQuery(q) {
+    db.query(q);
+  },
+  fetchUser: function(id) {
+    db.query(id);
+  },
+  deleteUser: (id) => {
+    db.query(id);
+  }
+};
+"""
+    app = """const db = require('./lib/db');
+app.get('/q', (req, res) => {
+  db.runQuery(req.body);
+  db.fetchUser(req.params.id);
+  db.deleteUser(req.body.q);
+});
+"""
+    orch = Orchestrator(settings=Settings(), cwe_db=None)
+    resp = orch.analyze_bundle_sync(
+        AnalyzeBundleRequest(
+            files={"app.js": app, "lib/db.js": lib},
+            config=ScanConfig(enable_taint=True),
+        )
+    )
+    sql_findings = [f for f in resp.findings if f.rule_id == "JS-SQL-001"]
+    sink_lines = {f.line_start for f in sql_findings if f.file_path == "lib/db.js"}
+    assert sink_lines == {3, 6, 9}, "expected sinks for all three object member kinds"
+    assert all(f.file_path == "lib/db.js" for f in sql_findings)
+
+
 def test_bundle_same_name_functions_do_not_collide() -> None:
     """Unrelated files both define queryUser; only the imported one runs."""
     evil = """

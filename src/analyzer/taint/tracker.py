@@ -114,8 +114,79 @@ def _params_from_function_node(fn_node: Node) -> list[str]:
     return []
 
 
+def _identifier_text(node: Node | None) -> str | None:
+    if node is None or node.type not in ("identifier", "property_identifier"):
+        return None
+    text = node.text.decode() if node.text else ""
+    return text or None
+
+
+def is_module_exports_member(node: Node) -> bool:
+    """True for a `module.exports` member expression."""
+    return (
+        node.type == "member_expression"
+        and _identifier_text(node.child_by_field_name("object")) == "module"
+        and _identifier_text(node.child_by_field_name("property")) == "exports"
+    )
+
+
+def export_assignment_name(left: Node) -> str | None:
+    """Property name for `exports.foo` / `module.exports.foo` assignment targets."""
+    if left.type != "member_expression":
+        return None
+    obj = left.child_by_field_name("object")
+    prop = _identifier_text(left.child_by_field_name("property"))
+    if obj is None or prop is None:
+        return None
+    if _identifier_text(obj) == "exports" or is_module_exports_member(obj):
+        return prop
+    return None
+
+
+def _index_exports_object(
+    obj: Node,
+    index: dict[str, tuple[list[str], Node, str | None]],
+    file_path: str | None,
+) -> None:
+    """Index `module.exports = { foo() {}, bar: function() {}, baz: () => {} }` members."""
+    for child in obj.children:
+        fn_node: Node | None = None
+        name: str | None = None
+        if child.type == "method_definition":
+            name = _identifier_text(child.child_by_field_name("name"))
+            fn_node = child
+        elif child.type == "pair":
+            value = child.child_by_field_name("value")
+            if value is not None and value.type in ("arrow_function", "function_expression"):
+                name = _identifier_text(child.child_by_field_name("key"))
+                fn_node = value
+        if name is None or fn_node is None:
+            continue
+        body = fn_node.child_by_field_name("body")
+        if body is not None:
+            index[name] = (_params_from_function_node(fn_node), body, file_path)
+
+
+def _index_export_assignment(
+    node: Node,
+    index: dict[str, tuple[list[str], Node, str | None]],
+    file_path: str | None,
+) -> None:
+    left = node.child_by_field_name("left")
+    right = node.child_by_field_name("right")
+    if left is None or right is None:
+        return
+    if right.type in ("arrow_function", "function_expression"):
+        name = export_assignment_name(left)
+        body = right.child_by_field_name("body")
+        if name and body is not None:
+            index[name] = (_params_from_function_node(right), body, file_path)
+    elif right.type == "object" and is_module_exports_member(left):
+        _index_exports_object(right, index, file_path)
+
+
 def _index_functions(
-    root: Node, file_path: str | None = None
+    root: Node, file_path: str | None = None, *, include_exports: bool = False
 ) -> dict[str, tuple[list[str], Node, str | None]]:
     index: dict[str, tuple[list[str], Node, str | None]] = {}
 
@@ -141,6 +212,8 @@ def _index_functions(
                     nm = vn.text.decode() if vn.text else ""
                     if nm:
                         index[nm] = (_params_from_function_node(val), body, file_path)
+        elif node.type == "assignment_expression" and include_exports:
+            _index_export_assignment(node, index, file_path)
         for c in node.children:
             visit(c)
 
@@ -151,9 +224,12 @@ def _index_functions(
 def merge_fn_index_from_roots(
     roots: list[Node], file_path: str | None = None
 ) -> dict[str, tuple[list[str], Node, str | None]]:
+    # include_exports: used by the bundle path (module_graph) so CommonJS
+    # export-assigned functions resolve cross-file; single-file analyze() keeps
+    # the default and is unchanged.
     merged: dict[str, tuple[list[str], Node, str | None]] = {}
     for root in roots:
-        merged.update(_index_functions(root, file_path))
+        merged.update(_index_functions(root, file_path, include_exports=True))
     return merged
 
 

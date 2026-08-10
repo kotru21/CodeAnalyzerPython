@@ -5,7 +5,11 @@ import posixpath
 import re
 from typing import TYPE_CHECKING
 
-from analyzer.taint.tracker import merge_fn_index_from_roots
+from analyzer.taint.tracker import (
+    export_assignment_name,
+    is_module_exports_member,
+    merge_fn_index_from_roots,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -69,24 +73,6 @@ def _ident_text(node: Node | None) -> str | None:
     return t or None
 
 
-def _is_module_exports(left: Node) -> bool:
-    if left.type != "member_expression":
-        return False
-    obj = left.child_by_field_name("object")
-    prop = left.child_by_field_name("property")
-    return _ident_text(obj) == "module" and _ident_text(prop) == "exports"
-
-
-def _exports_property_name(left: Node) -> str | None:
-    if left.type != "member_expression":
-        return None
-    obj = left.child_by_field_name("object")
-    prop = left.child_by_field_name("property")
-    if _ident_text(obj) != "exports":
-        return None
-    return _ident_text(prop)
-
-
 def _binding_from_export_value(value: Node | None) -> str | None:
     if value is None:
         return None
@@ -103,6 +89,11 @@ def _collect_object_exports(obj: Node, bindings: dict[str, str]) -> None:
             name = child.text.decode() if child.text else ""
             if name:
                 bindings[name] = name
+        elif child.type == "method_definition":
+            # { foo(...) {...} }: anonymous in scope, indexed under the key name
+            method_name = _ident_text(child.child_by_field_name("name"))
+            if method_name:
+                bindings[method_name] = method_name
         elif child.type == "pair":
             key = child.child_by_field_name("key")
             value = child.child_by_field_name("value")
@@ -113,6 +104,13 @@ def _collect_object_exports(obj: Node, bindings: dict[str, str]) -> None:
                 elif key.type == "string":
                     raw = key.text.decode() if key.text else ""
                     key_text = raw.strip("'\"") if raw else None
+            if (
+                key_text
+                and value is not None
+                and value.type in ("function_expression", "arrow_function")
+            ):
+                bindings[key_text] = key_text
+                continue
             fn_name = _binding_from_export_value(value)
             if key_text and fn_name:
                 bindings[key_text] = fn_name
@@ -127,17 +125,21 @@ def exported_bindings(root: Node) -> dict[str, str]:
             left = node.child_by_field_name("left")
             right = node.child_by_field_name("right")
             if left is not None and right is not None:
-                if _is_module_exports(left) and right.type == "object":
+                if is_module_exports_member(left) and right.type == "object":
                     _collect_object_exports(right, bindings)
-                elif _is_module_exports(left) and right.type == "identifier":
+                elif is_module_exports_member(left) and right.type == "identifier":
                     name = _ident_text(right)
                     if name:
                         bindings["default"] = name
-                export_name = _exports_property_name(left)
+                export_name = export_assignment_name(left)
                 if export_name is not None:
-                    fn_name = _binding_from_export_value(right)
-                    if fn_name:
-                        bindings[export_name] = fn_name
+                    if right.type in ("function_expression", "arrow_function"):
+                        # Anonymous fn is indexed under the export name itself.
+                        bindings[export_name] = export_name
+                    else:
+                        fn_name = _binding_from_export_value(right)
+                        if fn_name:
+                            bindings[export_name] = fn_name
         elif node.type == "export_statement":
             # export function foo() {} / export const foo = ...
             for child in node.children:
