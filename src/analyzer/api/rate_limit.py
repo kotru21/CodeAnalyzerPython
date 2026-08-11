@@ -63,7 +63,7 @@ def rate_limit_analyze(
     redis_key = f"analyzer:ratelimit:{bucket}:{path}"
     try:
         count_raw = redis_client.eval(_INCR_EXPIRE_LUA, 1, redis_key, 60)
-        count = int(count_raw)  # type: ignore[arg-type]
+        count = int(count_raw)
         if count > limit:
             raise HTTPException(status_code=429, detail="rate limit exceeded")
     except redis.RedisError as e:

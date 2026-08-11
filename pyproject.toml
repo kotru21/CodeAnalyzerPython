@@ -12,7 +12,7 @@ dependencies = [
     "tree-sitter-javascript>=0.25",
     "tree-sitter-typescript>=0.23.2",
     # Avoid celery[redis] → kombu[redis] pin redis<6.5; transport is in kombu.
-    # Cap <8 until kombu officially supports redis-py 8 (RESP3 defaults).
+    # Allow redis-py 8.x; keep <9 until we validate the next major.
     "celery>=5.6",
     "redis>=7.4,<9",
     "sqlalchemy>=2.0.51",
